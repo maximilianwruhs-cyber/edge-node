@@ -1,0 +1,10 @@
+---
+sovereign_nodes:
+  hosts:
+    localhost:
+      ansible_connection: local
+    # Add remote nodes here:
+    # gpu-server-01:
+    #   ansible_host: 192.168.1.100
+    #   ansible_user: ubuntu
+    #   cuda_architecture: "89"  # RTX 4090

@@ -1,0 +1,39 @@
+---
+# Role: models — Ensure the GGUF model file exists on the target
+
+- name: Create models directory
+  file:
+    path: "{{ models_dir }}"
+    state: directory
+    owner: "{{ edgenode_user }}"
+    mode: "0755"
+  become: true
+
+- name: Check if model file exists
+  stat:
+    path: "{{ models_dir }}/{{ model_hf_file }}"
+  register: model_file
+
+- name: Install huggingface-hub CLI
+  pip:
+    name: huggingface-hub
+    state: present
+  become: true
+  when: not model_file.stat.exists
+
+- name: Download model from HuggingFace
+  become: true
+  become_user: "{{ edgenode_user }}"
+  shell: |
+    huggingface-cli download {{ model_hf_repo }} {{ model_hf_file }} \
+      --local-dir {{ models_dir }} --local-dir-use-symlinks False
+  when: not model_file.stat.exists
+  register: download_result
+  retries: 2
+  delay: 10
+
+- name: Verify model downloaded
+  stat:
+    path: "{{ models_dir }}/{{ model_hf_file }}"
+  register: model_verify
+  failed_when: not model_verify.stat.exists

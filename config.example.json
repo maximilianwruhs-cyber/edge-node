@@ -1,0 +1,39 @@
+{
+  "$schema": "https://docs.openclaw.ai/schema.json",
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "token",
+      "token": "0a9892ad1f2f99d506fa2494d40ac7793bc6bade44aa447e"
+    }
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "/workspace/core_identity",
+      "model": "google/gemini-3.1-pro-preview"
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "dmPolicy": "pairing",
+      "groupPolicy": "disabled"
+    }
+  },
+  "mcp": {
+    "servers": {
+      "obsidian-vault": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/workspace/Obsidian_Vault"
+        ]
+      }
+    }
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.4.2",
+    "lastTouchedAt": "2026-04-05T06:14:11.005Z"
+  }
+}

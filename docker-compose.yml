@@ -1,0 +1,90 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # 1. RAG Backbone (PGVector for Obsidian & Invoices)
+  pgvector-rag:
+    image: ankane/pgvector:latest
+    container_name: edgenode-pgvector
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    environment:
+      POSTGRES_DB: edgenode_rag
+      POSTGRES_USER: edgenode
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-rag_secure_pass}
+    ports:
+      # strictly bounded to localhost for zero-trust security
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - rag_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edgenode -d edgenode_rag"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. Local Code & Reasoning Engine (Speculative Decoding via llama.cpp)
+  llama-coder-engine:
+    build:
+      context: ./llama-build
+      args:
+        - CUDA_ARCH=${CUDA_ARCHITECTURE:-native}
+    container_name: edgenode-llama-engine
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      # strictly bounded to localhost for zero-trust security
+      - "127.0.0.1:1238:8080"
+    volumes:
+      - ${MODELS_DIR:-~/.local/share/aos/models}:/models
+    # Command expects local models. Added -fa for Flash Attention compute efficiency.
+    command: >
+      -m /models/${MODEL_FILENAME}
+      --host 0.0.0.0 --port 8080 -ngl 99 --ctx-size 8192 --flash-attn on
+
+  # 3. Agent Orchestrator (OpenClaw)
+  openclaw-gateway:
+    build:
+      context: ./openclaw-build
+    container_name: edgenode-openclaw
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    depends_on:
+      pgvector-rag:
+        condition: service_healthy
+      llama-coder-engine:
+        condition: service_healthy
+    volumes:
+      - ./core_identity:/workspace/core_identity
+      - ./config:/root/.openclaw
+      # Obsidian Vault mounted directly for the MCP Filesystem Server
+      - ${OBSIDIAN_VAULT_PATH}:/workspace/Obsidian_Vault
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+
+volumes:
+  rag_data:
