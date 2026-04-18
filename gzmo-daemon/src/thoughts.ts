@@ -11,10 +11,10 @@
  * Lorenz attractor's topology and the engine's physical constants.
  */
 
-import {
-  Mutations, defaultMutations,
-  MutationEffect, CrystallizationEvent,
+import type {
+  Mutations, MutationEffect, CrystallizationEvent,
 } from "./types";
+import { defaultMutations } from "./types";
 
 const MAX_SLOTS = 5;
 const ABSORPTION_THRESHOLD = 0.18;
@@ -80,7 +80,7 @@ export class ThoughtCabinet {
 
     for (let i = 0; i < this.slots.length; i++) {
       const thought = this.slots[i];
-      if (thought === null) continue;
+      if (!thought) continue;
 
       thought.ticksRemaining--;
 

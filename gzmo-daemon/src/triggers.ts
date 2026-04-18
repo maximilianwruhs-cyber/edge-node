@@ -12,7 +12,8 @@
  * Triggers fire → LiveStream.md gets a line. Cost: zero.
  */
 
-import { Phase, ChaosSnapshot, defaultSnapshot } from "./types";
+import type { ChaosSnapshot } from "./types";
+import { Phase, defaultSnapshot } from "./types";
 
 // ── Trigger Condition ──────────────────────────────────────────────
 

@@ -23,17 +23,24 @@ import * as fs from "fs";
 import { LorenzAttractor, LogisticMap } from "./chaos";
 import { EngineState } from "./engine_state";
 import { ThoughtCabinet } from "./thoughts";
-import {
-  ChaosSnapshot, ChaosConfig, Phase,
-  CrystallizationEvent, defaultMutations,
-  phaseFromTension,
+import type {
+  ChaosSnapshot, ChaosConfig,
+  CrystallizationEvent,
 } from "./types";
 import {
-  ChaosEvent, tensionDelta, energyDelta, thoughtSeed,
-} from "./feedback";
-import { TriggerEngine, TriggerFired } from "./triggers";
+  Phase,
+  defaultMutations,
+  phaseFromTension,
+} from "./types";
+import type { ChaosEvent } from "./feedback";
 import {
-  CortisolState, defaultCortisolState, tickCortisol,
+  tensionDelta, energyDelta, thoughtSeed,
+} from "./feedback";
+import { TriggerEngine } from "./triggers";
+import type { TriggerFired } from "./triggers";
+import type { CortisolState } from "./allostasis";
+import {
+  defaultCortisolState, tickCortisol,
   allostateAdjustedTension,
 } from "./allostasis";
 
@@ -193,8 +200,8 @@ export class PulseLoop {
     const crystallizations = this.cabinet.tick();
     let lastCryst: CrystallizationEvent | null = null;
     if (crystallizations.length > 0) {
-      lastCryst = crystallizations[crystallizations.length - 1];
-      lastCryst.tickCrystallized = this.tick;
+      lastCryst = crystallizations[crystallizations.length - 1]!;
+      lastCryst!.tickCrystallized = this.tick;
     }
 
     // 8. Engine state tick

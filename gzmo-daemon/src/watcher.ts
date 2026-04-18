@@ -5,7 +5,7 @@
  * Debounces rapid save events and emits clean task events.
  */
 
-import chokidar from "chokidar";
+import { watch, type FSWatcher } from "chokidar";
 import { parseTask, type TaskStatus } from "./frontmatter";
 import { EventEmitter } from "events";
 import { basename } from "path";
@@ -19,7 +19,7 @@ export interface TaskEvent {
 }
 
 export class VaultWatcher extends EventEmitter {
-  private watcher: chokidar.FSWatcher | null = null;
+  private watcher: FSWatcher | null = null;
   private debounceTimers: Map<string, Timer> = new Map();
   private processing: Set<string> = new Set();
   private readonly debounceMs: number;
@@ -35,9 +35,9 @@ export class VaultWatcher extends EventEmitter {
   start(): void {
     console.log(`[WATCHER] Watching: ${this.inboxPath}`);
 
-    this.watcher = chokidar.watch(this.inboxPath, {
+    this.watcher = watch(this.inboxPath, {
       ignored: [
-        /(^|[\/\\])\../, // dotfiles
+        /(^|[\/\\])\.../,  // dotfiles
         /Subtasks/,       // subagent directory handled separately
       ],
       persistent: true,
@@ -49,11 +49,11 @@ export class VaultWatcher extends EventEmitter {
       },
     });
 
-    this.watcher.on("add", (path) => this.handleFileEvent(path));
-    this.watcher.on("change", (path) => this.handleFileEvent(path));
+    this.watcher.on("add", (path: string) => this.handleFileEvent(path));
+    this.watcher.on("change", (path: string) => this.handleFileEvent(path));
 
-    this.watcher.on("error", (err) => {
-      console.error(`[WATCHER] Error: ${err.message}`);
+    this.watcher.on("error", (err: unknown) => {
+      console.error(`[WATCHER] Error: ${err instanceof Error ? err.message : err}`);
     });
   }
 
