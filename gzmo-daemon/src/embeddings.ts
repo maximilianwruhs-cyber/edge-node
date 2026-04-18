@@ -88,7 +88,7 @@ function chunkMarkdown(content: string, filePath: string): Array<{ heading: stri
         chunks.push({ heading: currentHeading, text: buffer.trim() });
         buffer = "";
       }
-      currentHeading = headingMatch[1].trim();
+      currentHeading = headingMatch[1]!.trim();
     }
 
     buffer += line + "\n";
@@ -140,8 +140,11 @@ export async function syncEmbeddings(
     }
   }
 
-  // Build hash index of existing chunks
-  const existingHashes = new Set(store.chunks.map((c) => c.hash));
+  // Build hash index of existing chunks for O(1) dedup
+  const existingByHash = new Map<string, EmbeddingChunk>();
+  for (const c of store.chunks) {
+    existingByHash.set(c.hash, c);
+  }
 
   // Scan vault for .md files in configured folders
   const files = findMarkdownFiles(vaultPath);
@@ -166,10 +169,10 @@ export async function syncEmbeddings(
     for (const chunk of chunks) {
       const hash = hashContent(chunk.text);
 
-      if (existingHashes.has(hash)) {
-        // Keep existing chunk
-        const existing = store.chunks.find((c) => c.hash === hash);
-        if (existing) newChunks.push(existing);
+      const existing = existingByHash.get(hash);
+      if (existing) {
+        // Keep existing chunk (O(1) lookup)
+        newChunks.push(existing);
         skipped++;
         continue;
       }

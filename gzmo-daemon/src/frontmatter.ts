@@ -75,7 +75,7 @@ export function appendToTask(filePath: string, content: string): void {
   const raw = readFileSync(filePath, "utf-8");
   const parsed = matter(raw);
 
-  const newBody = parsed.content + "\n\n" + content;
+  const newBody = parsed.content.trimEnd() + "\n" + content;
   const output = matter.stringify(newBody, parsed.data);
   writeFileSync(filePath, output, "utf-8");
 }

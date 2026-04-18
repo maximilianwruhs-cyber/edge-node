@@ -31,7 +31,7 @@ export class TaskMemory {
     const summary = response
       .split("\n")
       .map((l) => l.trim())
-      .filter((l) => l.length > 10 && !l.startsWith("#") && !l.startsWith("*") && !l.startsWith("---"))
+      .filter((l) => l.length > 10 && !l.startsWith("# ") && !l.startsWith("---") && !l.startsWith("```"))
       [0] ?? response.slice(0, 100);
 
     this.entries.push({

@@ -99,11 +99,12 @@ async function bootEmbeddings(): Promise<void> {
 }
 
 // Boot embeddings async — don't block daemon startup
-bootEmbeddings().then(() => {
+bootEmbeddings().then(async () => {
   // ── Embedding Live-Sync (wiki watcher) ─────────────────────
   // Re-embed files when they change so new notes are searchable immediately
   if (embeddingStore) {
-    const { watch } = require("chokidar");
+    const chokidarMod = await import("chokidar");
+    const { watch } = chokidarMod;
     const WATCH_DIRS = [
       join(VAULT_PATH, "wiki"),
       join(VAULT_PATH, "GZMO", "Thought_Cabinet"),
@@ -167,7 +168,9 @@ setInterval(async () => {
 
       // Re-embed the new dream file
       if (embeddingStore) {
-        const dreamRelPath = `GZMO/Thought_Cabinet/${result.fileName}`;
+        const { basename } = await import("path");
+        const dreamFileName = basename(result.vaultPath);
+        const dreamRelPath = `GZMO/Thought_Cabinet/${dreamFileName}`;
         embedSingleFile(VAULT_PATH, dreamRelPath, embeddingStore, embeddingsPath, OLLAMA_API_URL)
           .catch(() => {}); // non-fatal
       }
@@ -219,6 +222,7 @@ setInterval(() => {
 async function shutdown(signal: string) {
   console.log(`\n[DAEMON] Received ${signal}. Shutting down...`);
   stream.log(`🔴 Daemon shutting down (${signal}).`);
+  stream.destroy(); // Flush buffered log entries
   pulse.stop();
   await watcher.stop();
   process.exit(0);

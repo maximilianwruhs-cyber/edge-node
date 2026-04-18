@@ -115,7 +115,8 @@ export async function processTask(
       const results = await searchVault(body, embeddingStore, OLLAMA_API_URL, 3);
       if (results.length > 0) {
         vaultContext = formatSearchContext(results);
-        console.log(`[ENGINE] Found ${results.length} vault chunks (top: ${(results[0].score * 100).toFixed(0)}%)`);
+        console.log(`[ENGINE] Found ${results.length} vault chunks (top: ${(results[0]!.score * 100).toFixed(0)}%)`);
+
       }
     }
 
@@ -165,8 +166,8 @@ export async function processTask(
     if (action === "chain" && frontmatter?.chain_next) {
       const nextTask = String(frontmatter.chain_next);
       console.log(`[ENGINE] Chain → next task: ${nextTask}`);
-      // Chain output becomes the prompt for the next task
-      const chainPath = filePath.replace(fileName, nextTask);
+      const { dirname, join } = await import("path");
+      const chainPath = join(dirname(filePath), nextTask);
       const chainContent = `---\nstatus: pending\naction: think\nchain_from: ${fileName}\n---\n\n## Chained Task\n\nPrevious context:\n${fullText.slice(0, 300)}\n\nContinue from here.`;
       
       try {
