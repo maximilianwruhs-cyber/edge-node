@@ -5,10 +5,17 @@ Wants=ollama.service
 
 [Service]
 Type=simple
-User=maximilian-wruhs
-WorkingDirectory=/home/maximilian-wruhs/Dokumente/Playground/DevStack_v2/edge-node/gzmo-daemon
-EnvironmentFile=/home/maximilian-wruhs/Dokumente/Playground/DevStack_v2/edge-node/gzmo-daemon/.env
-ExecStart=/home/maximilian-wruhs/.bun/bin/bun run index.ts
+# ── Adjust these paths to your system ──
+# User=%u
+# WorkingDirectory=/path/to/edge-node/gzmo-daemon
+# EnvironmentFile=/path/to/edge-node/gzmo-daemon/.env
+# ExecStart=/path/to/.bun/bin/bun run index.ts
+
+# ── Example (replace with your actual paths) ──
+User=%u
+WorkingDirectory=%h/edge-node/gzmo-daemon
+EnvironmentFile=%h/edge-node/gzmo-daemon/.env
+ExecStart=%h/.bun/bin/bun run index.ts
 Restart=on-failure
 RestartSec=10
 
