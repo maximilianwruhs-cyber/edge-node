@@ -15,6 +15,7 @@ export interface TaskEvent {
   fileName: string;
   status: TaskStatus;
   body: string;
+  frontmatter: Record<string, unknown>;
 }
 
 export class VaultWatcher extends EventEmitter {
@@ -86,6 +87,7 @@ export class VaultWatcher extends EventEmitter {
       fileName: basename(filePath, ".md"),
       status: task.frontmatter.status,
       body: task.body,
+      frontmatter: task.frontmatter as Record<string, unknown>,
     };
 
     console.log(`[WATCHER] New task detected: ${event.fileName}`);

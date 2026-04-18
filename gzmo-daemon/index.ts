@@ -1,24 +1,16 @@
 /**
- * GZMO Daemon v0.2.0 — The Obsidian OS (Chaos Edition)
+ * GZMO Daemon v0.3.0 — Smart Core Edition
  *
- * A sovereign, filesystem-driven AI daemon with a Lorenz attractor
- * heartbeat, Thought Cabinet crystallization, and autonomous dream
- * distillation. No chat apps. No cloud APIs for background ops.
- * Just you, your vault, and the daemon.
- *
- * Architecture:
- *   PulseLoop (174 BPM)  →  Lorenz + Logistic + ThoughtCabinet
- *                         →  Triggers → LiveStream.md (file writes)
- *   VaultWatcher          →  Inbox tasks → Ollama inference → task files
- *   DreamEngine           →  Completed tasks → reflection → Thought_Cabinet/
+ * A sovereign, filesystem-driven AI daemon with:
+ * - Lorenz attractor heartbeat + Thought Cabinet crystallization
+ * - Allostatic stress system (anti-sedation via simulated cortisol)
+ * - Vault search via nomic-embed-text embeddings
+ * - Episodic task memory for cross-task continuity
+ * - Task routing via action: frontmatter (think/search/chain)
+ * - Autonomous dream distillation
  *
  * Usage:
- *   bun run index.ts
- *
- * Environment:
- *   VAULT_PATH    — Path to Obsidian Vault
- *   OLLAMA_URL    — Ollama API base URL (default: http://localhost:11434/v1)
- *   OLLAMA_MODEL  — Model to use (default: qwen2.5:3b)
+ *   OLLAMA_MODEL=qwen2.5:3b VAULT_PATH=~/Vault bun run index.ts
  */
 
 import { resolve, join } from "path";
@@ -29,7 +21,10 @@ import { LiveStream } from "./src/stream";
 import { PulseLoop } from "./src/pulse";
 import { DreamEngine } from "./src/dreams";
 import { defaultConfig } from "./src/types";
-import type { TriggerFired, TriggerAction } from "./src/triggers";
+import { syncEmbeddings, embedSingleFile } from "./src/embeddings";
+import { TaskMemory } from "./src/memory";
+import type { EmbeddingStore } from "./src/embeddings";
+import type { TriggerFired } from "./src/triggers";
 import type { ChaosSnapshot } from "./src/types";
 
 // ── Resolve Vault Path ─────────────────────────────────────
@@ -37,6 +32,7 @@ const VAULT_PATH = process.env.VAULT_PATH ?? resolve(
   import.meta.dir, "../../Obsidian_Vault"
 );
 const INBOX_PATH = join(VAULT_PATH, "GZMO", "Inbox");
+const OLLAMA_API_URL = process.env.OLLAMA_URL?.replace("/v1", "") ?? "http://localhost:11434";
 
 // ── Ensure directories exist ───────────────────────────────
 for (const dir of [
@@ -50,13 +46,13 @@ for (const dir of [
 
 // ── Boot ───────────────────────────────────────────────────
 console.log("═══════════════════════════════════════════════");
-console.log("  GZMO Daemon v0.2.0 — The Obsidian OS");
-console.log("  ⚡ Chaos Engine Active");
+console.log("  GZMO Daemon v0.3.0 — Smart Core");
+console.log("  ⚡ Chaos Engine + Allostasis + Vault RAG");
 console.log("═══════════════════════════════════════════════");
 console.log(`  Vault:  ${VAULT_PATH}`);
 console.log(`  Inbox:  ${INBOX_PATH}`);
 console.log(`  Model:  ${process.env.OLLAMA_MODEL ?? "qwen2.5:3b"}`);
-console.log(`  Ollama: ${process.env.OLLAMA_URL ?? "http://localhost:11434/v1"}`);
+console.log(`  Ollama: ${OLLAMA_API_URL}`);
 console.log("═══════════════════════════════════════════════");
 
 // ── Initialize LiveStream ──────────────────────────────────
@@ -67,7 +63,7 @@ const pulse = new PulseLoop(defaultConfig());
 const snapshotPath = join(VAULT_PATH, "GZMO", "CHAOS_STATE.json");
 pulse.start(snapshotPath);
 
-// Wire triggers → LiveStream (NEVER to APIs — lesson from old build)
+// Wire triggers → LiveStream (NEVER to APIs)
 pulse.setTriggerDispatch((fired: TriggerFired[], snap: ChaosSnapshot) => {
   for (const f of fired) {
     if (f.action.type === "log") {
@@ -82,14 +78,36 @@ pulse.setTriggerDispatch((fired: TriggerFired[], snap: ChaosSnapshot) => {
 
 stream.log("🟢 Daemon started. Chaos Engine at 174 BPM.");
 
+// ── Initialize Task Memory ────────────────────────────────
+const memoryPath = join(VAULT_PATH, "GZMO", "memory.json");
+const memory = new TaskMemory(memoryPath);
+console.log(`[MEMORY] Loaded ${memory.count} entries from memory.json`);
+
+// ── Initialize Embeddings (Vault RAG) ──────────────────────
+const embeddingsPath = join(VAULT_PATH, "GZMO", "embeddings.json");
+let embeddingStore: EmbeddingStore | undefined;
+
+async function bootEmbeddings(): Promise<void> {
+  try {
+    console.log("[EMBED] Syncing vault embeddings...");
+    embeddingStore = await syncEmbeddings(VAULT_PATH, embeddingsPath, OLLAMA_API_URL);
+    stream.log(`📚 Vault indexed: ${embeddingStore.chunks.length} chunks embedded.`);
+  } catch (err: any) {
+    console.warn(`[EMBED] Embedding sync failed (non-fatal): ${err?.message}`);
+    console.warn("[EMBED] Vault search will be unavailable until embeddings sync.");
+  }
+}
+
+// Boot embeddings async — don't block daemon startup
+bootEmbeddings();
+
 // ── Initialize Dream Engine ────────────────────────────────
 const dreams = new DreamEngine(VAULT_PATH);
 
-// Dream cycle: every 30 minutes, check for completed tasks to reflect on
-const DREAM_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+// Dream cycle: every 30 minutes
+const DREAM_INTERVAL_MS = 30 * 60 * 1000;
 setInterval(async () => {
   const snap = pulse.snapshot();
-  // Only dream if there's enough energy and the engine is alive
   if (!snap.alive || snap.energy < 20) return;
 
   try {
@@ -97,6 +115,13 @@ setInterval(async () => {
     if (result) {
       stream.log(`🌙 Dream crystallized from **${result.taskFile}**`);
       pulse.emitEvent({ type: "dream_proposed", dreamText: result.insights.slice(0, 200) });
+
+      // Re-embed the new dream file
+      if (embeddingStore) {
+        const dreamRelPath = `GZMO/Thought_Cabinet/${result.fileName}`;
+        embedSingleFile(VAULT_PATH, dreamRelPath, embeddingStore, embeddingsPath, OLLAMA_API_URL)
+          .catch(() => {}); // non-fatal
+      }
     }
   } catch (err: any) {
     console.error(`[DREAM] Dream cycle error: ${err?.message}`);
@@ -110,10 +135,11 @@ let activeTaskCount = 0;
 
 watcher.on("task", async (event) => {
   activeTaskCount++;
-  stream.log(`📥 Task claimed: **${event.fileName}**`);
+  const action = event.frontmatter?.action ?? "think";
+  stream.log(`📥 Task claimed: **${event.fileName}** (${action})`);
 
   try {
-    await processTask(event, watcher, pulse);
+    await processTask(event, watcher, pulse, embeddingStore, memory);
     stream.log(`✅ Task completed: **${event.fileName}**`);
   } catch (err: any) {
     stream.log(`❌ Task failed: **${event.fileName}** — ${err?.message}`);
@@ -127,7 +153,7 @@ watcher.on("task", async (event) => {
 
 watcher.start();
 
-// ── Heartbeat Logger (every 60s: real chaos state) ─────────
+// ── Heartbeat Logger (every 60s) ───────────────────────────
 setInterval(() => {
   const snap = pulse.snapshot();
   stream.log("💓 Pulse.", {

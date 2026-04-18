@@ -90,6 +90,10 @@ export interface ChaosSnapshot {
   // Last crystallization (if any on this tick)
   lastCrystallization: CrystallizationEvent | null;
 
+  // Allostatic state
+  cortisol: number;         // 0.0–1.0 simulated stress level
+  anchoryBoost: number;     // current feedback stabilization boost
+
   // Timestamp
   timestamp: string;
 }
@@ -109,6 +113,8 @@ export function defaultSnapshot(): ChaosSnapshot {
     llmMaxTokens: 256,
     llmValence: 0.0,
     lastCrystallization: null,
+    cortisol: 0.0,
+    anchoryBoost: 0.0,
     timestamp: "",
   };
 }

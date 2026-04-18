@@ -32,6 +32,10 @@ import {
   ChaosEvent, tensionDelta, energyDelta, thoughtSeed,
 } from "./feedback";
 import { TriggerEngine, TriggerFired } from "./triggers";
+import {
+  CortisolState, defaultCortisolState, tickCortisol,
+  allostateAdjustedTension,
+} from "./allostasis";
 
 const LOGISTIC_COUPLING_INTERVAL = 10;
 
@@ -58,6 +62,10 @@ export class PulseLoop {
   private triggers: TriggerEngine;
   private onTriggerFired: ((fired: TriggerFired[], snap: ChaosSnapshot) => void) | null = null;
 
+  // Allostatic regulation
+  private cortisol: CortisolState = defaultCortisolState();
+  private hadRecentTask: boolean = false;
+
   // Telemetry cache
   private lastCpuTimes: { idle: number; total: number } | null = null;
 
@@ -80,6 +88,7 @@ export class PulseLoop {
       mutations: defaultMutations(),
       llmTemperature: 0.6, llmMaxTokens: 256, llmValence: 0.0,
       lastCrystallization: null,
+      cortisol: 0.0, anchoryBoost: 0.0,
       timestamp: new Date().toISOString(),
     };
   }
@@ -143,10 +152,21 @@ export class PulseLoop {
     const hwTension = this.sampleHardware();
     this.rawTension = hwTension;
 
-    // Apply tension bias from crystallized thoughts
-    this.tension = clamp(
-      this.rawTension + this.cabinet.mutations.tensionBias,
-      0, 100,
+    // 1b. Allostatic cortisol tick
+    const intervalMs = Math.round(60000 / this.config.bpm);
+    this.cortisol = tickCortisol(
+      this.cortisol,
+      this.cabinet.mutations.tensionBias,
+      this.hadRecentTask,
+      intervalMs,
+    );
+    this.hadRecentTask = false; // consumed
+
+    // Apply tension bias + allostatic correction
+    this.tension = allostateAdjustedTension(
+      this.rawTension,
+      this.cabinet.mutations.tensionBias,
+      this.cortisol,
     );
 
     // 2. Process pending events
@@ -207,6 +227,8 @@ export class PulseLoop {
       llmMaxTokens,
       llmValence,
       lastCrystallization: lastCryst,
+      cortisol: this.cortisol.level,
+      anchoryBoost: this.cortisol.anchoryBoost,
       timestamp: new Date().toISOString(),
     };
 
@@ -228,6 +250,11 @@ export class PulseLoop {
     for (const event of events) {
       this.rawTension = clamp(this.rawTension + tensionDelta(event), 0, 100);
       this.engine.applyEnergyDelta(energyDelta(event));
+
+      // Signal allostasis that real work happened
+      if (event.type === 'task_received' || event.type === 'task_completed') {
+        this.hadRecentTask = true;
+      }
 
       const seed = thoughtSeed(event);
       if (seed) {

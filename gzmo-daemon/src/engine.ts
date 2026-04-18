@@ -1,30 +1,29 @@
 /**
- * engine.ts — The GZMO inference engine (Chaos-Aware Edition).
+ * engine.ts — The GZMO inference engine (Smart Core v0.3.0)
  *
- * Connects to the local Ollama instance via the Vercel AI SDK.
- * Now chaos-aware: uses the PulseLoop snapshot to modulate
- * LLM temperature, max tokens, and valence on every inference call.
- *
- * Emits ChaosEvents back into the PulseLoop for the autopoietic loop.
+ * Now with:
+ * - Task routing via `action:` frontmatter
+ * - Vault search via nomic-embed-text embeddings
+ * - Episodic memory for cross-task continuity
+ * - Chaos-aware LLM parameter modulation
  */
 
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { streamText, generateText } from "ai";
+import { streamText } from "ai";
 import { updateFrontmatter, appendToTask } from "./frontmatter";
 import type { TaskEvent } from "./watcher";
 import type { VaultWatcher } from "./watcher";
-import { readFileSync, existsSync } from "fs";
-import { join, resolve } from "path";
-import { SkillsDiscovery } from "./skills";
+import { resolve } from "path";
 import type { ChaosSnapshot } from "./types";
 import type { PulseLoop } from "./pulse";
+import type { EmbeddingStore } from "./embeddings";
+import { searchVault, formatSearchContext } from "./search";
+import { TaskMemory } from "./memory";
 
 // ── Configuration ──────────────────────────────────────────
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL ?? "http://localhost:11434/v1";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5:3b";
-const VAULT_PATH = process.env.VAULT_PATH ?? resolve(
-  import.meta.dir, "../../../Obsidian_Vault"
-);
+const OLLAMA_API_URL = process.env.OLLAMA_URL?.replace("/v1", "") ?? "http://localhost:11434";
 
 // ── Provider Setup ─────────────────────────────────────────
 const ollama = createOpenAICompatible({
@@ -32,14 +31,35 @@ const ollama = createOpenAICompatible({
   baseURL: OLLAMA_BASE_URL,
 });
 
+// ── Task Actions ───────────────────────────────────────────
+type TaskAction = "think" | "search" | "chain";
+
+function parseAction(frontmatter: Record<string, unknown>): TaskAction {
+  const action = String(frontmatter.action ?? "think").toLowerCase();
+  if (action === "search" || action === "chain") return action;
+  return "think";
+}
+
 // ── System Prompt (lean for GTX 1070 prefill speed) ────────
-function buildSystemPrompt(snap?: ChaosSnapshot): string {
-  // Keep system prompt SHORT — the GTX 1070 can't handle heavy prefill.
-  // SOUL.md and skills are available for dream reflections, not per-task.
+function buildSystemPrompt(
+  snap?: ChaosSnapshot,
+  vaultContext?: string,
+  memoryContext?: string,
+): string {
   let prompt = "You are GZMO, a local AI daemon. Be concise and technical. Respond in Markdown.";
 
   if (snap) {
     prompt += ` [T:${snap.tension.toFixed(0)} E:${snap.energy.toFixed(0)}% ${snap.phase}]`;
+  }
+
+  // Inject vault search context (action: search)
+  if (vaultContext) {
+    prompt += vaultContext;
+  }
+
+  // Inject episodic memory (~100 tokens)
+  if (memoryContext) {
+    prompt += memoryContext;
   }
 
   return prompt;
@@ -52,7 +72,6 @@ export async function infer(system: string, prompt: string): Promise<string> {
     system,
     prompt,
   });
-  // Collect streamed chunks — no timeout, each chunk keeps it alive
   let text = "";
   for await (const chunk of result.textStream) {
     text += chunk;
@@ -60,13 +79,15 @@ export async function infer(system: string, prompt: string): Promise<string> {
   return text;
 }
 
-// ── Task Processor (Chaos-Aware) ───────────────────────────
+// ── Task Processor (Smart Core) ────────────────────────────
 export async function processTask(
   event: TaskEvent,
   watcher: VaultWatcher,
   pulse?: PulseLoop,
+  embeddingStore?: EmbeddingStore,
+  memory?: TaskMemory,
 ): Promise<void> {
-  const { filePath, fileName, body } = event;
+  const { filePath, fileName, body, frontmatter } = event;
   const startTime = Date.now();
 
   // Lock the file so our writes don't re-trigger the watcher
@@ -76,17 +97,34 @@ export async function processTask(
   pulse?.emitEvent({ type: "task_received", bodyLength: body.length });
 
   try {
+    // 0. Parse action from frontmatter
+    const action = parseAction(frontmatter ?? {});
+    console.log(`[ENGINE] Processing: ${fileName} (action: ${action})`);
+
     // 1. Claim the task
-    console.log(`[ENGINE] Processing: ${fileName}`);
     updateFrontmatter(filePath, {
       status: "processing",
       started_at: new Date().toISOString(),
     });
 
-    // 2. Run inference (chaos-modulated)
-    const snap = pulse?.snapshot();
-    const systemPrompt = buildSystemPrompt(snap);
+    // 2. Build context based on action
+    let vaultContext: string | undefined;
+    
+    if (action === "search" && embeddingStore) {
+      // Vault search: find relevant chunks before answering
+      const results = await searchVault(body, embeddingStore, OLLAMA_API_URL, 3);
+      if (results.length > 0) {
+        vaultContext = formatSearchContext(results);
+        console.log(`[ENGINE] Found ${results.length} vault chunks (top: ${(results[0].score * 100).toFixed(0)}%)`);
+      }
+    }
 
+    // 3. Build system prompt with context
+    const snap = pulse?.snapshot();
+    const memoryContext = memory?.toPromptContext();
+    const systemPrompt = buildSystemPrompt(snap, vaultContext, memoryContext);
+
+    // 4. Run inference (chaos-modulated)
     const result = streamText({
       model: ollama(OLLAMA_MODEL),
       system: systemPrompt,
@@ -94,31 +132,50 @@ export async function processTask(
       temperature: snap?.llmTemperature ?? 0.7,
     });
 
-    // 3. Stream the response — collect all chunks
+    // 5. Stream the response
     let fullText = "";
     for await (const chunk of result.textStream) {
       fullText += chunk;
     }
 
-    // 4. Append the result to the task file
+    // 6. Append the result to the task file
     const output = `\n---\n\n## GZMO Response\n*${new Date().toISOString()}*\n\n${fullText}`;
     appendToTask(filePath, output);
 
-    // 5. Mark as completed
+    // 7. Mark as completed
     updateFrontmatter(filePath, {
       status: "completed",
       completed_at: new Date().toISOString(),
     });
 
-    console.log(`[ENGINE] Completed: ${fileName}`);
+    console.log(`[ENGINE] Completed: ${fileName} (${action})`);
 
-    // 5. Feed completion back into chaos engine
+    // 8. Record in episodic memory
+    memory?.record(fileName, fullText);
+
+    // 9. Feed completion back into chaos engine
     const durationMs = Date.now() - startTime;
     pulse?.emitEvent({
       type: "task_completed",
-      tokenCount: fullText.length / 4, // rough estimate
+      tokenCount: fullText.length / 4,
       durationMs,
     });
+
+    // 10. Handle chain action — create next task
+    if (action === "chain" && frontmatter?.chain_next) {
+      const nextTask = String(frontmatter.chain_next);
+      console.log(`[ENGINE] Chain → next task: ${nextTask}`);
+      // Chain output becomes the prompt for the next task
+      const chainPath = filePath.replace(fileName, nextTask);
+      const chainContent = `---\nstatus: pending\naction: think\nchain_from: ${fileName}\n---\n\n## Chained Task\n\nPrevious context:\n${fullText.slice(0, 300)}\n\nContinue from here.`;
+      
+      try {
+        const { writeFileSync } = await import("fs");
+        writeFileSync(chainPath, chainContent);
+      } catch (err) {
+        console.warn(`[ENGINE] Chain write failed: ${err}`);
+      }
+    }
 
   } catch (err: any) {
     console.error(`[ENGINE] Failed: ${fileName} — ${err?.message}`);
@@ -131,7 +188,6 @@ export async function processTask(
       });
     } catch { /* last resort */ }
 
-    // Feed failure back into chaos engine
     pulse?.emitEvent({ type: "task_failed", errorType: err?.message ?? "unknown" });
 
   } finally {
