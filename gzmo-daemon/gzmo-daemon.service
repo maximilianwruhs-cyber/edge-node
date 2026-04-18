@@ -1,0 +1,26 @@
+[Unit]
+Description=GZMO Daemon — Sovereign AI Heartbeat
+After=network.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=simple
+User=maximilian-wruhs
+WorkingDirectory=/home/maximilian-wruhs/Dokumente/Playground/DevStack_v2/edge-node/gzmo-daemon
+EnvironmentFile=/home/maximilian-wruhs/Dokumente/Playground/DevStack_v2/edge-node/gzmo-daemon/.env
+ExecStart=/home/maximilian-wruhs/.bun/bin/bun run index.ts
+Restart=on-failure
+RestartSec=10
+
+# Ollama performance tuning
+Environment=OLLAMA_KV_CACHE_TYPE=q8_0
+Environment=OLLAMA_FLASH_ATTENTION=1
+Environment=OLLAMA_KEEP_ALIVE=-1
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=gzmo-daemon
+
+[Install]
+WantedBy=multi-user.target

@@ -99,7 +99,56 @@ async function bootEmbeddings(): Promise<void> {
 }
 
 // Boot embeddings async — don't block daemon startup
-bootEmbeddings();
+bootEmbeddings().then(() => {
+  // ── Embedding Live-Sync (wiki watcher) ─────────────────────
+  // Re-embed files when they change so new notes are searchable immediately
+  if (embeddingStore) {
+    const { watch } = require("chokidar");
+    const WATCH_DIRS = [
+      join(VAULT_PATH, "wiki"),
+      join(VAULT_PATH, "GZMO", "Thought_Cabinet"),
+    ];
+
+    const embedWatcher = watch(WATCH_DIRS, {
+      ignoreInitial: true,
+      awaitWriteFinish: { stabilityThreshold: 2000, pollInterval: 500 },
+    });
+
+    let embedDebounce: ReturnType<typeof setTimeout> | null = null;
+    const pendingFiles = new Set<string>();
+
+    const processEmbedQueue = async () => {
+      if (!embeddingStore) return;
+      const files = [...pendingFiles];
+      pendingFiles.clear();
+      for (const fullPath of files) {
+        const relPath = fullPath.replace(VAULT_PATH + "/", "");
+        try {
+          await embedSingleFile(VAULT_PATH, relPath, embeddingStore!, embeddingsPath, OLLAMA_API_URL);
+          console.log(`[EMBED] Live-synced: ${relPath}`);
+        } catch {
+          // non-fatal
+        }
+      }
+    };
+
+    embedWatcher.on("change", (filePath: string) => {
+      if (!filePath.endsWith(".md")) return;
+      pendingFiles.add(filePath);
+      if (embedDebounce) clearTimeout(embedDebounce);
+      embedDebounce = setTimeout(processEmbedQueue, 3000);
+    });
+
+    embedWatcher.on("add", (filePath: string) => {
+      if (!filePath.endsWith(".md")) return;
+      pendingFiles.add(filePath);
+      if (embedDebounce) clearTimeout(embedDebounce);
+      embedDebounce = setTimeout(processEmbedQueue, 3000);
+    });
+
+    console.log("[EMBED] Live-sync watcher started on wiki/ + Thought_Cabinet/");
+  }
+});
 
 // ── Initialize Dream Engine ────────────────────────────────
 const dreams = new DreamEngine(VAULT_PATH);
