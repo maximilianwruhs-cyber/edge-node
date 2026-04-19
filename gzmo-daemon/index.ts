@@ -28,6 +28,9 @@ import type { EmbeddingStore } from "./src/embeddings";
 import type { TriggerFired } from "./src/triggers";
 import type { ChaosSnapshot } from "./src/types";
 
+// ── Global Abort Controller (for graceful shutdown of in-flight inference) ──
+export const daemonAbort = new AbortController();
+
 // ── Resolve Vault Path ─────────────────────────────────────
 const VAULT_PATH = process.env.VAULT_PATH ?? resolve(
   import.meta.dir, "../../Obsidian_Vault"
@@ -55,6 +58,23 @@ console.log(`  Inbox:  ${INBOX_PATH}`);
 console.log(`  Model:  ${process.env.OLLAMA_MODEL ?? "qwen2.5:3b"}`);
 console.log(`  Ollama: ${OLLAMA_API_URL}`);
 console.log("═══════════════════════════════════════════════");
+
+// ── Ollama Readiness Gate ──────────────────────────────────────
+async function waitForOllama(url: string, maxRetries = 10): Promise<boolean> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const resp = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(3000) });
+      if (resp.ok) {
+        console.log(`[OLLAMA] Connected (attempt ${i + 1})`);
+        return true;
+      }
+    } catch {}
+    const delay = Math.min(1000 * Math.pow(2, i), 15000);
+    console.log(`[OLLAMA] Waiting for Ollama... retry ${i + 1}/${maxRetries} (${delay}ms)`);
+    await new Promise(r => setTimeout(r, delay));
+  }
+  return false;
+}
 
 // ── Initialize LiveStream ──────────────────────────────────
 const stream = new LiveStream(VAULT_PATH);
@@ -99,10 +119,44 @@ async function bootEmbeddings(): Promise<void> {
   }
 }
 
-// Boot embeddings async — don't block daemon startup
-bootEmbeddings().then(async () => {
+// ── Initialize Watcher (declared here, started after Ollama gate) ──
+const watcher = new VaultWatcher(INBOX_PATH);
+
+let activeTaskCount = 0;
+
+watcher.on("task", async (event) => {
+  activeTaskCount++;
+  const action = event.frontmatter?.action ?? "think";
+  stream.log(`📥 Task claimed: **${event.fileName}** (${action})`);
+
+  try {
+    await processTask(event, watcher, pulse, embeddingStore, memory);
+    stream.log(`✅ Task completed: **${event.fileName}**`);
+  } catch (err: any) {
+    stream.log(`❌ Task failed: **${event.fileName}** — ${err?.message}`);
+  }
+
+  activeTaskCount--;
+  if (activeTaskCount === 0) {
+    stream.log("💤 Idle. Waiting for tasks...");
+  }
+});
+
+// ── Boot Sequence (Ollama-gated) ──────────────────────────────
+(async () => {
+  const ollamaReady = await waitForOllama(OLLAMA_API_URL);
+
+  if (!ollamaReady) {
+    console.error("[CRITICAL] Ollama unreachable after all retries. Inference, dreams, and self-ask DISABLED.");
+    console.error("[CRITICAL] Start Ollama and restart the daemon: sudo systemctl start ollama && systemctl --user restart gzmo-daemon");
+    stream.log("🔴 **Ollama unreachable** — inference disabled. Start Ollama and restart daemon.");
+    // Don't exit — keep the heartbeat alive so the operator can see LiveStream status
+  } else {
+    // Boot embeddings only after Ollama is confirmed
+    await bootEmbeddings();
+  }
+
   // ── Embedding Live-Sync (wiki watcher) ─────────────────────
-  // Re-embed files when they change so new notes are searchable immediately
   if (embeddingStore) {
     const chokidarMod = await import("chokidar");
     const { watch } = chokidarMod;
@@ -134,23 +188,22 @@ bootEmbeddings().then(async () => {
       }
     };
 
-    embedWatcher.on("change", (filePath: string) => {
+    const onFileEvent = (filePath: string) => {
       if (!filePath.endsWith(".md")) return;
       pendingFiles.add(filePath);
       if (embedDebounce) clearTimeout(embedDebounce);
       embedDebounce = setTimeout(processEmbedQueue, 3000);
-    });
+    };
 
-    embedWatcher.on("add", (filePath: string) => {
-      if (!filePath.endsWith(".md")) return;
-      pendingFiles.add(filePath);
-      if (embedDebounce) clearTimeout(embedDebounce);
-      embedDebounce = setTimeout(processEmbedQueue, 3000);
-    });
+    embedWatcher.on("change", onFileEvent);
+    embedWatcher.on("add", onFileEvent);
 
     console.log("[EMBED] Live-sync watcher started on wiki/ + Thought_Cabinet/");
   }
-});
+
+  // ── Start Watcher (only after Ollama gate) ────────────────────
+  watcher.start();
+})();
 
 // ── Initialize Dream Engine ────────────────────────────────
 const dreams = new DreamEngine(VAULT_PATH);
@@ -212,32 +265,6 @@ setInterval(async () => {
     console.error(`[SELF-ASK] Cycle error: ${err?.message}`);
   }
 }, SELFASK_INTERVAL_MS);
-
-// ── Initialize Watcher ─────────────────────────────────────
-const watcher = new VaultWatcher(INBOX_PATH);
-
-let activeTaskCount = 0;
-
-watcher.on("task", async (event) => {
-  activeTaskCount++;
-  const action = event.frontmatter?.action ?? "think";
-  stream.log(`📥 Task claimed: **${event.fileName}** (${action})`);
-
-  try {
-    await processTask(event, watcher, pulse, embeddingStore, memory);
-    stream.log(`✅ Task completed: **${event.fileName}**`);
-  } catch (err: any) {
-    stream.log(`❌ Task failed: **${event.fileName}** — ${err?.message}`);
-  }
-
-  activeTaskCount--;
-  if (activeTaskCount === 0) {
-    stream.log("💤 Idle. Waiting for tasks...");
-  }
-});
-
-watcher.start();
-
 // ── Heartbeat Logger (every 60s) ───────────────────────────
 setInterval(() => {
   const snap = pulse.snapshot();
@@ -255,6 +282,10 @@ setInterval(() => {
 async function shutdown(signal: string) {
   console.log(`\n[DAEMON] Received ${signal}. Shutting down...`);
   stream.log(`🔴 Daemon shutting down (${signal}).`);
+
+  // Abort any in-flight LLM inference calls
+  daemonAbort.abort();
+
   stream.destroy(); // Flush buffered log entries
   pulse.stop();
   await watcher.stop();

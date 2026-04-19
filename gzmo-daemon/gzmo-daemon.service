@@ -1,25 +1,19 @@
 [Unit]
 Description=GZMO Daemon — Sovereign AI Heartbeat
-After=network.target ollama.service
-Wants=ollama.service
+After=network.target
 
 [Service]
 Type=simple
-# ── Adjust these paths to your system ──
-# User=%u
-# WorkingDirectory=/path/to/edge-node/gzmo-daemon
-# EnvironmentFile=/path/to/edge-node/gzmo-daemon/.env
-# ExecStart=/path/to/.bun/bin/bun run index.ts
-
-# ── Example (replace with your actual paths) ──
+# ── Paths: adjust to match your system layout ──
+# The defaults below assume edge-node is at ~/Dokumente/Playground/DevStack_v2/edge-node
 User=%u
-WorkingDirectory=%h/edge-node/gzmo-daemon
-EnvironmentFile=%h/edge-node/gzmo-daemon/.env
+WorkingDirectory=%h/Dokumente/Playground/DevStack_v2/edge-node/gzmo-daemon
+EnvironmentFile=%h/Dokumente/Playground/DevStack_v2/edge-node/gzmo-daemon/.env
 ExecStart=%h/.bun/bin/bun run index.ts
 Restart=on-failure
 RestartSec=10
 
-# Ollama performance tuning
+# Ollama performance tuning (if Ollama runs on same host)
 Environment=OLLAMA_KV_CACHE_TYPE=q8_0
 Environment=OLLAMA_FLASH_ATTENTION=1
 Environment=OLLAMA_KEEP_ALIVE=-1
@@ -30,4 +24,4 @@ StandardError=journal
 SyslogIdentifier=gzmo-daemon
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

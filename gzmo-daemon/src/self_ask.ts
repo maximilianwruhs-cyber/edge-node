@@ -161,8 +161,9 @@ export class SelfAskEngine {
       const seed = store.chunks[seedIdx]!;
 
       // Find a semantically distant chunk (low cosine similarity)
+      const seedMag = seed.magnitude || this.vectorMagnitude(seed.vector);
       const candidates = store.chunks
-        .map((c, i) => ({ chunk: c, idx: i, sim: this.cosineSim(seed.vector, c.vector) }))
+        .map((c, i) => ({ chunk: c, idx: i, sim: this.fastCosineSim(seed.vector, seedMag, c.vector, c.magnitude) }))
         .filter(c => c.sim >= MIN_SIMILARITY_GAP && c.sim <= MAX_SIMILARITY_GAP && c.idx !== seedIdx)
         .sort((a, b) => a.sim - b.sim);
 
@@ -451,15 +452,21 @@ export class SelfAskEngine {
     }
   }
 
-  private cosineSim(a: number[], b: number[]): number {
+  /** Fast cosine similarity using pre-computed magnitudes (O(d) instead of O(2d)). */
+  private fastCosineSim(a: number[], magA: number, b: number[], magB: number): number {
     if (a.length !== b.length || a.length === 0) return 0;
-    let dot = 0, magA = 0, magB = 0;
-    for (let i = 0; i < a.length; i++) {
-      dot += a[i]! * b[i]!;
-      magA += a[i]! * a[i]!;
-      magB += b[i]! * b[i]!;
-    }
-    const denom = Math.sqrt(magA) * Math.sqrt(magB);
-    return denom === 0 ? 0 : dot / denom;
+    const mA = magA || this.vectorMagnitude(a);
+    const mB = magB || this.vectorMagnitude(b);
+    if (mA === 0 || mB === 0) return 0;
+    let dot = 0;
+    for (let i = 0; i < a.length; i++) dot += a[i]! * b[i]!;
+    return dot / (mA * mB);
+  }
+
+  /** Fallback magnitude computation for chunks without pre-computed magnitude. */
+  private vectorMagnitude(vec: number[]): number {
+    let sum = 0;
+    for (let i = 0; i < vec.length; i++) sum += vec[i]! * vec[i]!;
+    return Math.sqrt(sum);
   }
 }

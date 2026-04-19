@@ -31,6 +31,7 @@ import {
   Phase,
   defaultMutations,
   phaseFromTension,
+  clamp,
 } from "./types";
 import type { ChaosEvent } from "./feedback";
 import {
@@ -325,6 +326,4 @@ function deriveValence(y: number): number {
   return clamp(y / 30, -1, 1);
 }
 
-function clamp(val: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, val));
-}
+

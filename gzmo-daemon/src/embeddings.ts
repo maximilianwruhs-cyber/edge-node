@@ -20,6 +20,7 @@ export interface EmbeddingChunk {
   text: string;           // chunk content
   hash: string;           // SHA256 of text
   vector: number[];       // embedding vector
+  magnitude: number;      // pre-computed L2 norm for O(1) cosine sim
   updatedAt: string;      // ISO timestamp
 }
 
@@ -27,6 +28,7 @@ export interface EmbeddingStore {
   modelName: string;
   chunks: EmbeddingChunk[];
   lastFullScan: string;
+  dirty: boolean;         // tracks whether chunks were modified since last write
 }
 
 // ── Configuration ──────────────────────────────────────────────────
@@ -67,6 +69,13 @@ async function embedText(
 
   const data = await resp.json() as { embedding: number[] };
   return data.embedding;
+}
+
+/** Compute L2 magnitude of a vector. */
+function vectorMagnitude(vec: number[]): number {
+  let sum = 0;
+  for (let i = 0; i < vec.length; i++) sum += vec[i]! * vec[i]!;
+  return Math.sqrt(sum);
 }
 
 /**
@@ -130,11 +139,19 @@ export async function syncEmbeddings(
     modelName: EMBED_MODEL,
     chunks: [],
     lastFullScan: "",
+    dirty: false,
   };
 
   if (fs.existsSync(storePath)) {
     try {
-      store = JSON.parse(fs.readFileSync(storePath, "utf-8"));
+      const loaded = JSON.parse(fs.readFileSync(storePath, "utf-8"));
+      store = { ...loaded, dirty: false };
+      // Backfill magnitudes for chunks from older stores
+      for (const c of store.chunks) {
+        if (c.magnitude === undefined || c.magnitude === 0) {
+          c.magnitude = vectorMagnitude(c.vector);
+        }
+      }
     } catch {
       console.warn("[EMBED] Corrupt store, rebuilding...");
     }
@@ -186,6 +203,7 @@ export async function syncEmbeddings(
           text: chunk.text.slice(0, 500), // store truncated for space
           hash,
           vector,
+          magnitude: vectorMagnitude(vector),
           updatedAt: new Date().toISOString(),
         });
         embedded++;
@@ -197,6 +215,7 @@ export async function syncEmbeddings(
 
   store.chunks = newChunks;
   store.lastFullScan = new Date().toISOString();
+  store.dirty = false; // just persisted
 
   // Persist
   const tmpPath = storePath + ".tmp";
@@ -241,6 +260,7 @@ export async function embedSingleFile(
         text: chunk.text.slice(0, 500),
         hash: hashContent(chunk.text),
         vector,
+        magnitude: vectorMagnitude(vector),
         updatedAt: new Date().toISOString(),
       });
     } catch {
@@ -249,9 +269,11 @@ export async function embedSingleFile(
   }
 
   // Persist
+  store.dirty = true;
   const tmpPath = storePath + ".tmp";
   fs.writeFileSync(tmpPath, JSON.stringify(store));
   fs.renameSync(tmpPath, storePath);
+  store.dirty = false;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────

@@ -63,10 +63,10 @@ export async function searchVault(
 
   if (queryMag === 0) return [];
 
-  // Score all chunks (cached magnitudes make this ~40% faster at scale)
+  // Score all chunks (using pre-computed magnitudes for O(1) lookups)
   const scored = store.chunks
     .map((chunk) => {
-      const chunkMag = getMagnitude(chunk.vector);
+      const chunkMag = chunk.magnitude || getMagnitude(chunk.vector); // fallback for legacy data
       if (chunkMag === 0) return { file: chunk.file, heading: chunk.heading, text: chunk.text, score: 0 };
 
       let dot = 0;

@@ -9,7 +9,7 @@
  * periodically reseeded from the Lorenz attractor's normalized output.
  */
 
-import { Phase } from "./types";
+import { Phase, clamp } from "./types";
 
 // ── Lorenz Attractor ───────────────────────────────────────────────
 
@@ -119,8 +119,4 @@ export class LogisticMap {
   }
 }
 
-// ── Utility ────────────────────────────────────────────────────────
 
-function clamp(val: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, val));
-}

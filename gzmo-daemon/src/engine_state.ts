@@ -9,7 +9,7 @@
  * Death at energy ≤ 0, rebirth at 30% chance per tick (chaos_roll > 0.7)
  */
 
-import { Phase, phaseFromTension, phaseDrainMultiplier } from "./types";
+import { Phase, phaseFromTension, phaseDrainMultiplier, clamp } from "./types";
 
 const ENERGY_MIN = 0.0;
 const ENERGY_MAX = 100.0;
@@ -92,6 +92,4 @@ export class EngineState {
   }
 }
 
-function clamp(val: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, val));
-}
+

@@ -14,7 +14,7 @@
 import type {
   Mutations, MutationEffect, CrystallizationEvent,
 } from "./types";
-import { defaultMutations } from "./types";
+import { defaultMutations, clamp } from "./types";
 
 const MAX_SLOTS = 5;
 const ABSORPTION_THRESHOLD = 0.18;
@@ -182,6 +182,4 @@ export class ThoughtCabinet {
   }
 }
 
-function clamp(val: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, val));
-}
+
