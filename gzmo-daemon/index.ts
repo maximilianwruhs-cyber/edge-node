@@ -20,6 +20,7 @@ import { processTask, infer } from "./src/engine";
 import { LiveStream } from "./src/stream";
 import { PulseLoop } from "./src/pulse";
 import { DreamEngine } from "./src/dreams";
+import { SelfAskEngine } from "./src/self_ask";
 import { defaultConfig } from "./src/types";
 import { syncEmbeddings, embedSingleFile } from "./src/embeddings";
 import { TaskMemory } from "./src/memory";
@@ -179,6 +180,38 @@ setInterval(async () => {
     console.error(`[DREAM] Dream cycle error: ${err?.message}`);
   }
 }, DREAM_INTERVAL_MS);
+
+// ── Initialize Self-Ask Engine ─────────────────────────────
+const selfAsk = new SelfAskEngine(VAULT_PATH);
+
+// Self-Ask cycle: every 2 hours
+const SELFASK_INTERVAL_MS = 2 * 60 * 60 * 1000;
+setInterval(async () => {
+  const snap = pulse.snapshot();
+  if (!snap.alive || !embeddingStore) return;
+
+  try {
+    const results = await selfAsk.cycle(snap, embeddingStore, OLLAMA_API_URL, infer);
+    for (const result of results) {
+      stream.log(`🔍 Self-Ask (${result.strategy}): ${result.output.slice(0, 80).replace(/\n/g, " ")}`);
+      pulse.emitEvent({ type: "self_ask_completed", strategy: result.strategy, result: result.output });
+
+      // Re-embed the new self-ask file
+      if (result.vaultPath && embeddingStore) {
+        const { basename } = await import("path");
+        const fileName = basename(result.vaultPath);
+        const relPath = `GZMO/Thought_Cabinet/${fileName}`;
+        embedSingleFile(VAULT_PATH, relPath, embeddingStore, embeddingsPath, OLLAMA_API_URL)
+          .catch(() => {}); // non-fatal
+      }
+    }
+    if (results.length > 0) {
+      stream.log(`🔍 Self-Ask cycle complete: ${results.length} strategies ran.`);
+    }
+  } catch (err: any) {
+    console.error(`[SELF-ASK] Cycle error: ${err?.message}`);
+  }
+}, SELFASK_INTERVAL_MS);
 
 // ── Initialize Watcher ─────────────────────────────────────
 const watcher = new VaultWatcher(INBOX_PATH);

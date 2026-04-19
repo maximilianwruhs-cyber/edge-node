@@ -16,6 +16,7 @@ export type ChaosEvent =
   | { type: "task_received"; bodyLength: number }
   | { type: "heartbeat_fired"; energy: number }
   | { type: "dream_proposed"; dreamText: string }
+  | { type: "self_ask_completed"; strategy: string; result: string }
   | { type: "error_occurred"; errorType: string }
   | { type: "custom"; tensionDelta: number; energyDelta: number; thoughtSeed?: ThoughtSeed };
 
@@ -40,6 +41,8 @@ export function tensionDelta(event: ChaosEvent): number {
       return -0.5; // Routine is calming
     case "dream_proposed":
       return 3.0; // Identity proposals are intense but less than old build
+    case "self_ask_completed":
+      return 1.5; // Self-asks are mild stimulus
     case "error_occurred":
       return 8.0; // Errors are very stressful
     case "custom":
@@ -59,6 +62,8 @@ export function energyDelta(event: ChaosEvent): number {
       return -0.2; // Minimal drain — lesson from old build: heartbeats MUST be cheap
     case "dream_proposed":
       return -3.0;
+    case "self_ask_completed":
+      return -1.0; // Cheap — just one LLM call
     case "error_occurred":
       return -5.0;
     case "custom":
@@ -80,6 +85,8 @@ export function thoughtSeed(event: ChaosEvent): ThoughtSeed | null {
       return { category: "heartbeat", text: `Heartbeat at energy ${event.energy.toFixed(0)}%` };
     case "dream_proposed":
       return { category: "dream", text: event.dreamText };
+    case "self_ask_completed":
+      return { category: "self_ask", text: `${event.strategy}: ${event.result.slice(0, 80)}` };
     case "custom":
       return event.thoughtSeed ?? null;
     default:
