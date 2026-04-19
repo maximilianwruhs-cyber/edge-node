@@ -20,7 +20,7 @@ import * as path from "path";
 import matter from "gray-matter";
 import type { ChaosSnapshot } from "./types";
 import type { EmbeddingStore } from "./embeddings";
-import { searchVault, formatSearchContext } from "./search";
+import { searchVault, formatSearchContext, type SearchResult } from "./search";
 
 const MIN_BODY_LENGTH = 100;   // Skip tiny tasks
 const MAX_TRANSCRIPT = 4000;   // Fit in small model context
@@ -74,6 +74,7 @@ export class DreamEngine {
 
     // 3. Search vault for related knowledge (RAG grounding)
     let vaultContext = "";
+    let relatedFiles: SearchResult[] = [];
     if (store && store.chunks.length > 0) {
       try {
         // Use the first 500 chars of transcript as search query
@@ -81,6 +82,7 @@ export class DreamEngine {
         const results = await searchVault(query, store, ollamaUrl, 5);
         if (results.length > 0) {
           vaultContext = formatSearchContext(results);
+          relatedFiles = results;
           console.log(`[DREAM] RAG: found ${results.length} vault chunks (top: ${(results[0]!.score * 100).toFixed(0)}%)`);
         }
       } catch (err: any) {
@@ -92,8 +94,8 @@ export class DreamEngine {
     const insights = await this.reflect(transcript, vaultContext, snapshot, infer);
     if (!insights) return null;
 
-    // 5. Write dream entry to Thought Cabinet
-    const dreamPath = this.writeDreamEntry(insights, snapshot, task.id);
+    // 5. Write dream entry to Thought Cabinet (with vault links)
+    const dreamPath = this.writeDreamEntry(insights, snapshot, task.id, relatedFiles);
 
     // 6. Mark as digested
     this.markDigested(task.id);
@@ -211,6 +213,7 @@ export class DreamEngine {
     insights: string,
     snap: ChaosSnapshot,
     taskFile: string,
+    relatedFiles: SearchResult[] = [],
   ): string {
     const cabinetDir = path.join(this.vaultPath, "GZMO", "Thought_Cabinet");
     try { fs.mkdirSync(cabinetDir, { recursive: true }); } catch {}
@@ -220,6 +223,16 @@ export class DreamEngine {
     const timeStr = now.toISOString().slice(11, 19).replace(/:/g, "-");
     const filename = `${dateStr}_${timeStr}_dream.md`;
     const filepath = path.join(cabinetDir, filename);
+
+    // Build Obsidian wiki-links from RAG search results
+    const uniqueFiles = [...new Set(relatedFiles.map(r => r.file))];
+    const wikiLinks = uniqueFiles.map(f => {
+      const basename = f.replace(/\.md$/, "").split("/").pop() || f;
+      return `- [[${basename}]]`;
+    });
+
+    // Source task link
+    const sourceBasename = taskFile.replace(/\.md$/, "");
 
     const content = [
       "---",
@@ -238,10 +251,25 @@ export class DreamEngine {
       "",
       `# 🌙 Dream — ${dateStr} ${now.toISOString().slice(11, 16)} UTC`,
       "",
+      `Source: [[${sourceBasename}]]`,
+      "",
       "## Crystallized Insights",
       "",
       insights,
       "",
+    ];
+
+    // Add vault links section if we have related files
+    if (wikiLinks.length > 0) {
+      content.push(
+        "## Vault Links",
+        "",
+        ...wikiLinks,
+        "",
+      );
+    }
+
+    content.push(
       "## Chaos State at Dream Time",
       "",
       `| Metric | Value |`,
@@ -255,9 +283,9 @@ export class DreamEngine {
       "",
       `---`,
       `*Crystallized autonomously by the GZMO Dream Engine at tick ${snap.tick}.*`,
-    ].join("\n");
+    );
 
-    fs.writeFileSync(filepath, content, "utf-8");
+    fs.writeFileSync(filepath, content.join("\n"), "utf-8");
     return filepath;
   }
 
