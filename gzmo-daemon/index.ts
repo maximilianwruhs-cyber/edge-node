@@ -161,7 +161,7 @@ setInterval(async () => {
   if (!snap.alive || snap.energy < 20) return;
 
   try {
-    const result = await dreams.dream(snap, infer);
+    const result = await dreams.dream(snap, infer, embeddingStore ?? undefined, OLLAMA_API_URL);
     if (result) {
       stream.log(`🌙 Dream crystallized from **${result.taskFile}**`);
       pulse.emitEvent({ type: "dream_proposed", dreamText: result.insights.slice(0, 200) });

@@ -19,6 +19,8 @@ import * as fs from "fs";
 import * as path from "path";
 import matter from "gray-matter";
 import type { ChaosSnapshot } from "./types";
+import type { EmbeddingStore } from "./embeddings";
+import { searchVault, formatSearchContext } from "./search";
 
 const MIN_BODY_LENGTH = 100;   // Skip tiny tasks
 const MAX_TRANSCRIPT = 4000;   // Fit in small model context
@@ -56,6 +58,8 @@ export class DreamEngine {
   async dream(
     snapshot: ChaosSnapshot,
     infer: (system: string, prompt: string) => Promise<string>,
+    store?: EmbeddingStore,
+    ollamaUrl?: string,
   ): Promise<DreamResult | null> {
     // 1. Find unprocessed completed tasks
     const task = this.findUnprocessedTask();
@@ -68,20 +72,36 @@ export class DreamEngine {
       return null;
     }
 
-    // 3. Reflect via local Ollama
-    const insights = await this.reflect(transcript, snapshot, infer);
+    // 3. Search vault for related knowledge (RAG grounding)
+    let vaultContext = "";
+    if (store && store.chunks.length > 0) {
+      try {
+        // Use the first 500 chars of transcript as search query
+        const query = transcript.slice(0, 500);
+        const results = await searchVault(query, store, ollamaUrl, 5);
+        if (results.length > 0) {
+          vaultContext = formatSearchContext(results);
+          console.log(`[DREAM] RAG: found ${results.length} vault chunks (top: ${(results[0]!.score * 100).toFixed(0)}%)`);
+        }
+      } catch (err: any) {
+        console.warn(`[DREAM] RAG search failed (non-fatal): ${err?.message}`);
+      }
+    }
+
+    // 4. Reflect via local Ollama (with vault context)
+    const insights = await this.reflect(transcript, vaultContext, snapshot, infer);
     if (!insights) return null;
 
-    // 4. Write dream entry to Thought Cabinet
-    const vaultPath = this.writeDreamEntry(insights, snapshot, task.id);
+    // 5. Write dream entry to Thought Cabinet
+    const dreamPath = this.writeDreamEntry(insights, snapshot, task.id);
 
-    // 5. Mark as digested
+    // 6. Mark as digested
     this.markDigested(task.id);
 
     return {
       taskFile: task.id,
       insights,
-      vaultPath,
+      vaultPath: dreamPath,
       timestamp: new Date().toISOString(),
     };
   }
@@ -143,36 +163,41 @@ export class DreamEngine {
 
   private async reflect(
     transcript: string,
+    vaultContext: string,
     snap: ChaosSnapshot,
     infer: (system: string, prompt: string) => Promise<string>,
   ): Promise<string | null> {
     const systemPrompt = [
-      "You are GZMO's Dream Engine — the reflective subconscious of a sovereign AI agent.",
-      "You are processing a completed task interaction.",
-      "Your job is to CRYSTALLIZE the experience into durable knowledge.",
+      "You are summarizing a completed task for a knowledge vault.",
+      "You MUST only state facts that appear in the TASK TRANSCRIPT or VAULT CONTEXT below.",
+      "Do NOT invent concepts, names, formulas, or discoveries that are not in the text.",
+      "If the task was trivial or contained little substance, say so briefly.",
       "",
-      "Extract ONLY:",
-      "1. Key decisions made and their rationale",
-      "2. Bugs found and their ROOT CAUSES",
-      "3. Architecture patterns worth remembering",
-      "4. Surprising discoveries or broken expectations",
-      "5. New capabilities gained",
+      "## Instructions",
       "",
-      "Do NOT include:",
-      "- Raw commands, error output, or debugging noise",
-      "- Retry loops or temporary workarounds",
-      "- Obvious facts that don't need remembering",
+      "1. **What was done** — Summarize what the task asked and what the response contained. Quote or closely paraphrase the actual text.",
+      "2. **Connections to existing knowledge** — If vault context is provided below, note specific links between this task and existing vault entries. Reference the source file names.",
+      "3. **What to remember** — State 1-3 concrete, factual takeaways. These must be verifiable from the text above.",
       "",
-      "Format: bullet points, max 8 items, ruthlessly concise.",
-      "Each bullet should be a LESSON, not a log entry.",
-      `Current chaos state: tick=${snap.tick}, tension=${snap.tension.toFixed(1)}, phase=${snap.phase}`,
+      "If there is nothing meaningful to extract, write: 'No significant insights — task was routine.'",
+      "",
+      "Format: short paragraphs, no headers, no invented terminology. Max 200 words total.",
     ].join("\n");
 
+    const userPrompt = [
+      "## TASK TRANSCRIPT",
+      "",
+      transcript,
+    ];
+
+    if (vaultContext) {
+      userPrompt.push("", "## VAULT CONTEXT (related existing knowledge)", "", vaultContext);
+    }
+
+    userPrompt.push("", "---", "", "Summarize this task and connect it to the vault context above.");
+
     try {
-      const result = await infer(
-        systemPrompt,
-        `Reflect on this task interaction and crystallize the key insights:\n\n${transcript}`,
-      );
+      const result = await infer(systemPrompt, userPrompt.join("\n"));
       return result || null;
     } catch (err: any) {
       console.error(`[DREAM] Reflection failed: ${err?.message}`);
