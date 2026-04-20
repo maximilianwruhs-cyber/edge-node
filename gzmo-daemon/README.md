@@ -20,7 +20,7 @@ cp .env.example .env
 OLLAMA_KV_CACHE_TYPE=q8_0 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 ollama serve
 
 # 4. Pull required models
-ollama pull qwen2.5:3b
+ollama pull hermes3:8b
 ollama pull nomic-embed-text
 
 # 5. Start the daemon
@@ -92,7 +92,9 @@ Summarize all research on speculative decoding.
 │  └── Live sync (wiki watcher)              │
 │                                             │
 │  TaskMemory (rolling 5-task log)            │
-│  DreamEngine (30-min autonomous reflection) │
+│  DreamEngine (30-min distillation)          │
+│  SelfAskEngine (Gap detective, contradictions)│
+│  WikiEngine (knowledge consolidation & self-doc)│
 └─────────────────────────────────────────────┘
 ```
 
@@ -101,7 +103,7 @@ Summarize all research on speculative decoding.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `VAULT_PATH` | **required** | Absolute path to Obsidian Vault |
-| `OLLAMA_MODEL` | `qwen2.5:3b` | Model for inference |
+| `OLLAMA_MODEL` | `hermes3:8b` | Model for inference |
 | `OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API endpoint |
 | `OLLAMA_KV_CACHE_TYPE` | `f16` | KV cache quantization (`q8_0` recommended) |
 | `OLLAMA_FLASH_ATTENTION` | `0` | Flash attention (`1` = enabled) |
@@ -129,8 +131,10 @@ Obsidian_Vault/
 | File | LOC | Purpose |
 |------|-----|---------|
 | `pulse.ts` | 323 | PulseLoop — 174 BPM heartbeat orchestrator |
+| `wiki_engine.ts` | 235 | Autonomous knowledge consolidation & self-doc |
 | `embeddings.ts` | 282 | Vault embedding pipeline (nomic-embed-text) |
 | `dreams.ts` | 268 | Autonomous dream distillation engine |
+| `self_ask.ts` | 225 | Autonomous self-interrogation & spaced repetition |
 | `engine.ts` | 196 | Task processor with action routing |
 | `thoughts.ts` | 187 | Thought Cabinet (Disco Elysium-style) |
 | `triggers.ts` | 168 | Edge-triggered autonomous events |
@@ -162,13 +166,14 @@ journalctl -u gzmo-daemon -f
 
 ## Hardware Tested
 
-- **GTX 1070** (8GB VRAM) — qwen2.5:3b at ~65 tok/s, 5s per task
-- **13+ hours** verified uptime, 0 crashes
-- **1,259 chunks** embedded (19.8 MB vector store)
-- **nomic-embed-text** (274 MB) fits alongside qwen2.5:3b in VRAM
+- **GTX 1070** (8GB VRAM) — hermes3:8b at ~20 tok/s
+- **24+ hours** verified uptime, 0 crashes
+- **2,065 chunks** embedded
+- **nomic-embed-text** (274 MB) fits alongside hermes3:8b in VRAM
 
 ## Version History
 
+- **v0.4.0** — Sovereign Core: WikiEngine consolidation, Self-Ask Engine
 - **v0.3.0** — Smart Core: allostasis, vault RAG, task routing, episodic memory
 - **v0.2.0** — Chaos Edition: streaming inference, KV cache optimization
 - **v0.1.0** — Initial port from OpenClaw plugin to sovereign Bun daemon

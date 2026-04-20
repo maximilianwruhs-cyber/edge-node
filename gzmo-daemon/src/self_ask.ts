@@ -22,7 +22,7 @@
  *   - NotebookLM 082f7d1d: Reflexion verbal reinforcement
  */
 
-import * as fs from "fs";
+import { mkdirSync, promises as fsp } from "fs";
 import * as path from "path";
 import type { EmbeddingStore } from "./embeddings";
 import type { ChaosSnapshot } from "./types";
@@ -100,7 +100,7 @@ export class SelfAskEngine {
   constructor(vaultPath: string) {
     this.vaultPath = vaultPath;
     this.honeypotDir = path.join(vaultPath, HONEYPOT_DIR);
-    try { fs.mkdirSync(this.honeypotDir, { recursive: true }); } catch {}
+    try { mkdirSync(this.honeypotDir, { recursive: true }); } catch {}
   }
 
   /**
@@ -206,7 +206,7 @@ export class SelfAskEngine {
       );
 
       // Write result to Thought Cabinet
-      const vaultPath = this.writeSelfAskEntry(
+      const vaultPath = await this.writeSelfAskEntry(
         "gap_detective", result, relatedFiles, honeypot
       );
 
@@ -233,16 +233,19 @@ export class SelfAskEngine {
     try {
       // Find the most recent dream file
       const cabinetDir = path.join(this.vaultPath, "GZMO", "Thought_Cabinet");
-      const dreams = fs.readdirSync(cabinetDir)
-        .filter(f => f.endsWith("_dream.md"))
-        .sort()
-        .reverse();
+      let dreams: string[] = [];
+      try {
+        dreams = (await fsp.readdir(cabinetDir))
+          .filter(f => f.endsWith("_dream.md"))
+          .sort()
+          .reverse();
+      } catch {}
 
       if (dreams.length === 0) return null;
 
-      const latestDream = fs.readFileSync(
-        path.join(cabinetDir, dreams[0]!), "utf-8"
-      );
+      const latestDream = await Bun.file(
+        path.join(cabinetDir, dreams[0]!)
+      ).text();
 
       // Branch 1: Extract claims from the dream
       const claims = await infer(
@@ -265,13 +268,13 @@ export class SelfAskEngine {
       if (claimLines.length === 0) return null;
 
       // Branch 2+: Verify each claim against vault
-      const verifications: string[] = [];
+      const fullReport: string[] = [];
       for (const claim of claimLines) {
         const results = await searchVault(claim, store, ollamaUrl, 3);
         const context = formatSearchContext(results);
 
         if (!context) {
-          verifications.push(`${claim} → No Information (no vault matches)`);
+          fullReport.push(`${claim} → No Information (no vault matches)`);
           continue;
         }
 
@@ -281,14 +284,14 @@ export class SelfAskEngine {
         );
 
         const cleanVerdict = verdict.trim().split("\n")[0]!.trim();
-        verifications.push(`${claim} → ${cleanVerdict}`);
+        fullReport.push(`${claim} → ${cleanVerdict}`);
       }
 
       this.taskCount++;
 
-      const result = verifications.join("\n");
+      const result = fullReport.join("\n");
       const relatedFiles = [dreams[0]!.replace(/\.md$/, "")];
-      const vaultPath = this.writeSelfAskEntry(
+      const vaultPath = await this.writeSelfAskEntry(
         "contradiction_scan", result, relatedFiles,
         `Source dream: ${dreams[0]}\nClaims extracted:\n${claims}`
       );
@@ -321,15 +324,18 @@ export class SelfAskEngine {
       // Collect all files referenced in recent dreams
       const recentlyReferenced = new Set<string>();
       try {
-        const dreamFiles = fs.readdirSync(cabinetDir)
-          .filter(f => f.endsWith(".md"))
-          .map(f => path.join(cabinetDir, f))
-          .filter(f => fs.statSync(f).mtimeMs > cutoff);
-
+        const entries = await fsp.readdir(cabinetDir, { withFileTypes: true });
+        const dreamFiles = entries
+            .filter(e => e.isFile() && e.name.endsWith(".md"))
+            .map(e => path.join(cabinetDir, e.name));
+        
         for (const df of dreamFiles) {
-          const content = fs.readFileSync(df, "utf-8");
-          const links = content.match(/\[\[([^\]]+)\]\]/g) || [];
-          links.forEach(l => recentlyReferenced.add(l.replace(/\[\[|\]\]/g, "")));
+            const stat = await fsp.stat(df);
+            if (stat.mtimeMs > cutoff) {
+                const content = await Bun.file(df).text();
+                const links = content.match(/\[\[([^\]]+)\]\]/g) || [];
+                links.forEach(l => recentlyReferenced.add(l.replace(/\[\[|\]\]/g, "")));
+            }
         }
       } catch {}
 
@@ -372,7 +378,7 @@ export class SelfAskEngine {
         ...recentResults.map(r => r.file.replace(/\.md$/, "").split("/").pop() || r.file),
       ];
 
-      const vaultPath = this.writeSelfAskEntry(
+      const vaultPath = await this.writeSelfAskEntry(
         "spaced_repetition", result, [...new Set(relatedFiles)],
         `Re-visited: ${oldChunk.file}\nHeading: ${oldChunk.heading}`
       );
@@ -392,14 +398,14 @@ export class SelfAskEngine {
 
   // ── Vault Writing ───────────────────────────────────────────
 
-  private writeSelfAskEntry(
+  private async writeSelfAskEntry(
     strategy: SelfAskStrategy,
     output: string,
     relatedFiles: string[],
     honeypotData: string,
-  ): string {
+  ): Promise<string> {
     const cabinetDir = path.join(this.vaultPath, "GZMO", "Thought_Cabinet");
-    try { fs.mkdirSync(cabinetDir, { recursive: true }); } catch {}
+    try { mkdirSync(cabinetDir, { recursive: true }); } catch {}
 
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
@@ -437,7 +443,7 @@ export class SelfAskEngine {
       `*Generated autonomously by the GZMO Self-Ask Engine (${strategy}).*`,
     ].join("\n");
 
-    fs.writeFileSync(filepath, content, "utf-8");
+    await Bun.write(filepath, content);
     console.log(`[SELF-ASK] Written: ${filename}`);
     return filepath;
   }

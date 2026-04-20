@@ -23,7 +23,7 @@ import { TaskMemory } from "./memory";
 
 // ── Configuration ──────────────────────────────────────────
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL ?? "http://localhost:11434/v1";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3:4b";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "hermes3:8b";
 const OLLAMA_API_URL = process.env.OLLAMA_URL?.replace("/v1", "") ?? "http://localhost:11434";
 
 // ── Provider Setup ─────────────────────────────────────────
@@ -140,7 +140,7 @@ export async function processTask(
     console.log(`[ENGINE] Processing: ${fileName} (action: ${action})`);
 
     // 1. Claim the task
-    updateFrontmatter(filePath, {
+    await updateFrontmatter(filePath, {
       status: "processing",
       started_at: new Date().toISOString(),
     });
@@ -195,10 +195,10 @@ export async function processTask(
 
     // 8. Append the result to the task file
     const output = `\n---\n\n## GZMO Response\n*${new Date().toISOString()}*\n\n${fullText}`;
-    appendToTask(filePath, output);
+    await appendToTask(filePath, output);
 
     // 9. Mark as completed
-    updateFrontmatter(filePath, {
+    await updateFrontmatter(filePath, {
       status: "completed",
       completed_at: new Date().toISOString(),
     });
@@ -225,8 +225,7 @@ export async function processTask(
       const chainContent = `---\nstatus: pending\naction: think\nchain_from: ${fileName}\n---\n\n## Chained Task\n\nPrevious context:\n${fullText.slice(0, 300)}\n\nContinue from here.`;
       
       try {
-        const { writeFileSync } = await import("fs");
-        writeFileSync(chainPath, chainContent);
+        await Bun.write(chainPath, chainContent);
       } catch (err) {
         console.warn(`[ENGINE] Chain write failed: ${err}`);
       }
@@ -236,8 +235,8 @@ export async function processTask(
     console.error(`[ENGINE] Failed: ${fileName} — ${err?.message}`);
 
     try {
-      appendToTask(filePath, `\n---\n\n## ❌ Error\n\`\`\`\n${err?.message}\n\`\`\``);
-      updateFrontmatter(filePath, {
+      await appendToTask(filePath, `\n---\n\n## ❌ Error\n\`\`\`\n${err?.message}\n\`\`\``);
+      await updateFrontmatter(filePath, {
         status: "failed",
         completed_at: new Date().toISOString(),
       });

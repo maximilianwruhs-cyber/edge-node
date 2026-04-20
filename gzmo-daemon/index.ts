@@ -14,7 +14,7 @@
  */
 
 import { resolve, join } from "path";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { VaultWatcher } from "./src/watcher";
 import { processTask, infer } from "./src/engine";
 import { LiveStream } from "./src/stream";
@@ -22,6 +22,7 @@ import { PulseLoop } from "./src/pulse";
 import { DreamEngine } from "./src/dreams";
 import { SelfAskEngine } from "./src/self_ask";
 import { PruningEngine } from "./src/prune";
+import { WikiEngine } from "./src/wiki_engine";
 import { defaultConfig } from "./src/types";
 import { syncEmbeddings, embedSingleFile } from "./src/embeddings";
 import { TaskMemory } from "./src/memory";
@@ -56,7 +57,7 @@ console.log("  ⚡ Chaos Engine + Allostasis + Vault RAG");
 console.log("═══════════════════════════════════════════════");
 console.log(`  Vault:  ${VAULT_PATH}`);
 console.log(`  Inbox:  ${INBOX_PATH}`);
-console.log(`  Model:  ${process.env.OLLAMA_MODEL ?? "qwen3:4b"}`);
+console.log(`  Model:  ${process.env.OLLAMA_MODEL ?? "hermes3:8b"}`);
 console.log(`  Ollama: ${OLLAMA_API_URL}`);
 console.log("═══════════════════════════════════════════════");
 
@@ -141,11 +142,9 @@ pulse.setTriggerDispatch((fired: TriggerFired[], snap: ChaosSnapshot) => {
       "---",
       `*The Lorenz attractor's trajectory has been permanently altered.*`,
     ].join("\n");
-    try {
-      import("fs").then(fs => fs.promises.writeFile(filepath, content, "utf-8"))
-        .then(() => console.log(`[CRYSTAL] Written: ${filename}`))
-        .catch(() => {});
-    } catch {}
+    Bun.write(filepath, content)
+      .then(() => console.log(`[CRYSTAL] Written: ${filename}`))
+      .catch(() => {});
   }
 });
 
@@ -344,6 +343,44 @@ setInterval(async () => {
   const nextMs = Math.round(SELFASK_BASE_MS * energyFactor);
   nextSelfAskTime = Date.now() + nextMs;
   console.log(`[SELF-ASK] Next cycle in ${(nextMs / 3600000).toFixed(1)}h (energy=${snap2.energy.toFixed(0)}%)`);
+}, 60_000); // Check every minute
+
+// ── Initialize Wiki Engine (Autonomous Knowledge Builder) ───
+const srcPath = resolve(import.meta.dir, "src");
+const wikiEngine = new WikiEngine(VAULT_PATH, srcPath);
+
+// Wiki cycle: runs every 1h, consolidates Thought_Cabinet → wiki/
+const WIKI_BASE_MS = 60 * 60 * 1000;
+let nextWikiTime = Date.now() + 5 * 60 * 1000; // First run after 5min warmup
+
+setInterval(async () => {
+  if (Date.now() < nextWikiTime) return;
+
+  const snap = pulse.snapshot();
+  if (!snap.alive || snap.energy < 25) return;
+
+  try {
+    const results = await wikiEngine.cycle(infer, embeddingStore ?? undefined, OLLAMA_API_URL);
+    for (const result of results) {
+      stream.log(`📖 Wiki created: **${result.title}** (${result.sourceCount} sources → wiki/${result.category})`);
+      pulse.emitEvent({ type: "wiki_consolidated", pageTitle: result.title });
+
+      // Re-embed the new wiki page
+      if (embeddingStore) {
+        const relPath = result.wikiPath.replace(VAULT_PATH + "/", "");
+        embedSingleFile(VAULT_PATH, relPath, embeddingStore, embeddingsPath, OLLAMA_API_URL)
+          .catch(() => {}); // non-fatal
+      }
+    }
+    if (results.length > 0) {
+      stream.log(`📖 Wiki cycle complete: ${results.length} pages created.`);
+    }
+  } catch (err: any) {
+    console.error(`[WIKI] Cycle error: ${err?.message}`);
+  }
+
+  nextWikiTime = Date.now() + WIKI_BASE_MS;
+  console.log(`[WIKI] Next cycle in 60min`);
 }, 60_000); // Check every minute
 
 // ── Initialize Pruning Engine (Purposeful Forgetting) ───────

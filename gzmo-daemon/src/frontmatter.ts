@@ -4,10 +4,12 @@
  * Uses gray-matter for symmetrical read/write so the daemon
  * can update `status: pending` → `processing` → `completed`
  * without corrupting the user's markdown body.
+ *
+ * All I/O uses native Bun.file() / Bun.write() for zero-copy
+ * read/write via io_uring — no event loop blocking.
  */
 
 import matter from "gray-matter";
-import { readFileSync, writeFileSync } from "fs";
 
 export type TaskStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
 
@@ -29,9 +31,9 @@ export interface ParsedTask {
  * Parse a markdown file and extract its frontmatter + body.
  * Returns null if the file has no valid frontmatter.
  */
-export function parseTask(filePath: string): ParsedTask | null {
+export async function parseTask(filePath: string): Promise<ParsedTask | null> {
   try {
-    const raw = readFileSync(filePath, "utf-8");
+    const raw = await Bun.file(filePath).text();
     const parsed = matter(raw);
 
     if (!parsed.data || typeof parsed.data.status !== "string") {
@@ -52,11 +54,11 @@ export function parseTask(filePath: string): ParsedTask | null {
  * Update the frontmatter of a task file without touching the body.
  * Uses gray-matter's stringify for lossless round-trip.
  */
-export function updateFrontmatter(
+export async function updateFrontmatter(
   filePath: string,
   updates: Partial<TaskFrontmatter>
-): void {
-  const raw = readFileSync(filePath, "utf-8");
+): Promise<void> {
+  const raw = await Bun.file(filePath).text();
   const parsed = matter(raw);
 
   // Merge updates into existing frontmatter
@@ -64,18 +66,18 @@ export function updateFrontmatter(
 
   // Reconstruct file: gray-matter.stringify preserves body exactly
   const output = matter.stringify(parsed.content, merged);
-  writeFileSync(filePath, output, "utf-8");
+  await Bun.write(filePath, output);
 }
 
 /**
  * Append markdown content to the end of a task file,
  * preserving the frontmatter and existing body intact.
  */
-export function appendToTask(filePath: string, content: string): void {
-  const raw = readFileSync(filePath, "utf-8");
+export async function appendToTask(filePath: string, content: string): Promise<void> {
+  const raw = await Bun.file(filePath).text();
   const parsed = matter(raw);
 
   const newBody = parsed.content.trimEnd() + "\n" + content;
   const output = matter.stringify(newBody, parsed.data);
-  writeFileSync(filePath, output, "utf-8");
+  await Bun.write(filePath, output);
 }

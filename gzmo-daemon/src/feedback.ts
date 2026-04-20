@@ -17,6 +17,7 @@ export type ChaosEvent =
   | { type: "heartbeat_fired"; energy: number }
   | { type: "dream_proposed"; dreamText: string }
   | { type: "self_ask_completed"; strategy: string; result: string }
+  | { type: "wiki_consolidated"; pageTitle: string }
   | { type: "error_occurred"; errorType: string }
   | { type: "custom"; tensionDelta: number; energyDelta: number; thoughtSeed?: ThoughtSeed };
 
@@ -43,6 +44,8 @@ export function tensionDelta(event: ChaosEvent): number {
       return 3.0; // Identity proposals are intense but less than old build
     case "self_ask_completed":
       return 1.5; // Self-asks are mild stimulus
+    case "wiki_consolidated":
+      return -1.5; // Consolidation is satisfying
     case "error_occurred":
       return 8.0; // Errors are very stressful
     case "custom":
@@ -64,6 +67,8 @@ export function energyDelta(event: ChaosEvent): number {
       return -3.0;
     case "self_ask_completed":
       return -1.0; // Cheap — just one LLM call
+    case "wiki_consolidated":
+      return -2.0; // Wiki synthesis costs moderate energy
     case "error_occurred":
       return -5.0;
     case "custom":
@@ -87,6 +92,8 @@ export function thoughtSeed(event: ChaosEvent): ThoughtSeed | null {
       return { category: "dream", text: event.dreamText };
     case "self_ask_completed":
       return { category: "self_ask", text: `${event.strategy}: ${event.result.slice(0, 80)}` };
+    case "wiki_consolidated":
+      return { category: "wiki", text: `Consolidated wiki page: ${event.pageTitle}` };
     case "custom":
       return event.thoughtSeed ?? null;
     default:

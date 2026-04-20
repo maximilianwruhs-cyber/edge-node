@@ -6,7 +6,7 @@
  * The daemon remembers what it did.
  */
 
-import * as fs from "fs";
+import { existsSync, readFileSync } from "fs";
 
 export interface MemoryEntry {
   task: string;       // task filename
@@ -66,8 +66,8 @@ export class TaskMemory {
 
   private load(): void {
     try {
-      if (fs.existsSync(this.filePath)) {
-        this.entries = JSON.parse(fs.readFileSync(this.filePath, "utf-8"));
+      if (existsSync(this.filePath)) {
+        this.entries = JSON.parse(readFileSync(this.filePath, "utf-8"));
       }
     } catch {
       this.entries = [];
@@ -76,9 +76,8 @@ export class TaskMemory {
 
   private save(): void {
     try {
-      const tmp = this.filePath + ".tmp";
-      fs.writeFileSync(tmp, JSON.stringify(this.entries, null, 2));
-      fs.renameSync(tmp, this.filePath);
+      Bun.write(this.filePath, JSON.stringify(this.entries, null, 2))
+        .catch(() => {});
     } catch {}
   }
 }

@@ -7,7 +7,7 @@
  * the active dream ingestion loop lightning fast.
  */
 
-import * as fs from "fs";
+import { promises as fsp } from "fs";
 import * as path from "path";
 
 const DIGESTED_FILE_NAME = ".gzmo_dreams_digested.json";
@@ -46,10 +46,11 @@ export class PruningEngine {
       // 1. Read digested IDs
       let digestedData: { digested: string[] };
       try {
-        const raw = await fs.promises.readFile(this.digestedFilePath, "utf-8");
-        digestedData = JSON.parse(raw);
+        const file = Bun.file(this.digestedFilePath);
+        if (!(await file.exists())) return;
+        digestedData = await file.json();
       } catch {
-        return; // No file or invalid, skip pruning
+        return; // Invalid JSON, skip pruning
       }
 
       const digestedIds = new Set(digestedData.digested || []);
@@ -59,11 +60,11 @@ export class PruningEngine {
       const archiveDir = path.join(this.vaultPath, "GZMO", "Archive", "Inbox");
       
       try {
-        await fs.promises.mkdir(archiveDir, { recursive: true });
+        await fsp.mkdir(archiveDir, { recursive: true });
       } catch {}
 
       // 2. Scan Inbox for files that exist in digested database
-      const inboxFiles = await fs.promises.readdir(inboxDir);
+      const inboxFiles = await fsp.readdir(inboxDir);
       let archivedCount = 0;
 
       for (const file of inboxFiles) {
@@ -74,7 +75,7 @@ export class PruningEngine {
           const destPath = path.join(archiveDir, file);
           
           try {
-            await fs.promises.rename(sourcePath, destPath);
+            await fsp.rename(sourcePath, destPath);
             archivedCount++;
           } catch (err: any) {
             console.error(`[PRUNE] Failed to archive ${file}: ${err?.message}`);

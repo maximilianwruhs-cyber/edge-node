@@ -15,7 +15,7 @@
  * - Zero network dependency. Zero API quota consumed.
  */
 
-import * as fs from "fs";
+import { readFileSync, promises as fsp } from "fs";
 import * as path from "path";
 import matter from "gray-matter";
 import type { ChaosSnapshot } from "./types";
@@ -113,13 +113,13 @@ export class DreamEngine {
   private async findUnprocessedTask(): Promise<{ id: string; path: string } | null> {
     const inboxDir = path.join(this.vaultPath, "GZMO", "Inbox");
     try {
-      const fileNames = await fs.promises.readdir(inboxDir);
+      const fileNames = await fsp.readdir(inboxDir);
       const mdFiles = fileNames.filter(f => f.endsWith(".md"));
       
       const fileStats = await Promise.all(
         mdFiles.map(async f => {
           const filepath = path.join(inboxDir, f);
-          const stat = await fs.promises.stat(filepath);
+          const stat = await fsp.stat(filepath);
           return { name: f, id: f, path: filepath, mtime: stat.mtimeMs };
         })
       );
@@ -131,7 +131,7 @@ export class DreamEngine {
 
         // Check if the task is completed
         try {
-          const raw = await fs.promises.readFile(file.path, "utf-8");
+          const raw = await Bun.file(file.path).text();
           const parsed = matter(raw);
           if (parsed.data.status === "completed") {
             return { id: file.id, path: file.path };
@@ -148,7 +148,7 @@ export class DreamEngine {
 
   private async extractTranscript(taskPath: string): Promise<string> {
     try {
-      const raw = await fs.promises.readFile(taskPath, "utf-8");
+      const raw = await Bun.file(taskPath).text();
       const parsed = matter(raw);
       let transcript = parsed.content.trim();
 
@@ -219,7 +219,7 @@ export class DreamEngine {
     relatedFiles: SearchResult[] = [],
   ): Promise<string> {
     const cabinetDir = path.join(this.vaultPath, "GZMO", "Thought_Cabinet");
-    try { await fs.promises.mkdir(cabinetDir, { recursive: true }); } catch {}
+    try { await fsp.mkdir(cabinetDir, { recursive: true }); } catch {}
 
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
@@ -288,7 +288,7 @@ export class DreamEngine {
       `*Crystallized autonomously by the GZMO Dream Engine at tick ${snap.tick}.*`,
     );
 
-    await fs.promises.writeFile(filepath, content.join("\n"), "utf-8");
+    await Bun.write(filepath, content.join("\n"));
     return filepath;
   }
 
@@ -296,7 +296,9 @@ export class DreamEngine {
 
   private loadDigested(): Set<string> {
     try {
-      const data = JSON.parse(fs.readFileSync(this.digestedFilePath, "utf-8"));
+      // Synchronous boot-time load — acceptable during constructor
+      const raw = readFileSync(this.digestedFilePath, "utf-8");
+      const data = JSON.parse(raw);
       return new Set(data.digested || []);
     } catch {
       return new Set();
@@ -313,7 +315,7 @@ export class DreamEngine {
     }
 
     try {
-      await fs.promises.writeFile(this.digestedFilePath, JSON.stringify({
+      await Bun.write(this.digestedFilePath, JSON.stringify({
         digested: [...this.digestedIds],
         lastDream: new Date().toISOString(),
       }, null, 2));

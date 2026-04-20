@@ -6,11 +6,11 @@
  * (heartbeat, research, dream) and injected as context during the
  * appropriate engine phase.
  *
- * This module has ZERO external dependencies — uses gray-matter
- * which is already a daemon dependency.
+ * Uses Bun.file() for zero-copy file reading. Directory scanning
+ * uses Node.js readdirSync since it's boot-time only.
  */
 
-import * as fs from "fs";
+import { existsSync, readdirSync } from "fs";
 import * as path from "path";
 import matter from "gray-matter";
 
@@ -33,12 +33,12 @@ export class SkillsDiscovery {
    * Find all skills matching a given trigger type.
    * Returns skills tagged with the specified trigger or "any".
    */
-  findSkills(trigger: "heartbeat" | "research" | "dream"): SkillEntry[] {
+  async findSkills(trigger: "heartbeat" | "research" | "dream"): Promise<SkillEntry[]> {
     const skillsDir = path.join(this.vaultDir, "wiki", "skills");
 
-    if (!fs.existsSync(skillsDir)) return [];
+    if (!existsSync(skillsDir)) return [];
 
-    const files: string[] = fs.readdirSync(skillsDir)
+    const files: string[] = readdirSync(skillsDir)
       .filter((f: string) => f.endsWith(".md"));
 
     const skills: SkillEntry[] = [];
@@ -46,7 +46,7 @@ export class SkillsDiscovery {
     for (const file of files) {
       const filePath = path.join(skillsDir, file);
       try {
-        const raw = fs.readFileSync(filePath, "utf-8");
+        const raw = await Bun.file(filePath).text();
         const parsed = matter(raw);
         const skillTrigger = ((parsed.data.trigger as string) || "any").toLowerCase();
 

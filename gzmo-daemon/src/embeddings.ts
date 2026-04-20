@@ -8,7 +8,7 @@
  * Source: Local RAG notebook (NotebookLM)
  */
 
-import * as fs from "fs";
+import { existsSync, readdirSync } from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 
@@ -142,9 +142,10 @@ export async function syncEmbeddings(
     dirty: false,
   };
 
-  if (fs.existsSync(storePath)) {
+  const storeFile = Bun.file(storePath);
+  if (await storeFile.exists()) {
     try {
-      const loaded = JSON.parse(fs.readFileSync(storePath, "utf-8"));
+      const loaded = await storeFile.json();
       store = { ...loaded, dirty: false };
       // Backfill magnitudes for chunks from older stores
       for (const c of store.chunks) {
@@ -173,7 +174,7 @@ export async function syncEmbeddings(
     const fullPath = path.join(vaultPath, file);
     let content: string;
     try {
-      content = fs.readFileSync(fullPath, "utf-8");
+      content = await Bun.file(fullPath).text();
     } catch {
       continue;
     }
@@ -217,10 +218,8 @@ export async function syncEmbeddings(
   store.lastFullScan = new Date().toISOString();
   store.dirty = false; // just persisted
 
-  // Persist
-  const tmpPath = storePath + ".tmp";
-  fs.writeFileSync(tmpPath, JSON.stringify(store));
-  fs.renameSync(tmpPath, storePath);
+  // Persist atomically via Bun.write
+  await Bun.write(storePath, JSON.stringify(store));
 
   console.log(`[EMBED] Sync complete: ${embedded} new, ${skipped} cached, ${store.chunks.length} total`);
   return store;
@@ -239,7 +238,7 @@ export async function embedSingleFile(
   const fullPath = path.join(vaultPath, relPath);
   let content: string;
   try {
-    content = fs.readFileSync(fullPath, "utf-8");
+    content = await Bun.file(fullPath).text();
   } catch {
     return;
   }
@@ -268,11 +267,9 @@ export async function embedSingleFile(
     }
   }
 
-  // Persist
+  // Persist atomically via Bun.write
   store.dirty = true;
-  const tmpPath = storePath + ".tmp";
-  fs.writeFileSync(tmpPath, JSON.stringify(store));
-  fs.renameSync(tmpPath, storePath);
+  await Bun.write(storePath, JSON.stringify(store));
   store.dirty = false;
 }
 
@@ -283,7 +280,7 @@ function findMarkdownFiles(vaultPath: string): string[] {
 
   for (const folder of EMBED_FOLDERS) {
     const folderPath = path.join(vaultPath, folder);
-    if (!fs.existsSync(folderPath)) continue;
+    if (!existsSync(folderPath)) continue;
     scanDir(folderPath, vaultPath, files);
   }
 
@@ -292,7 +289,7 @@ function findMarkdownFiles(vaultPath: string): string[] {
 
 function scanDir(dir: string, root: string, out: string[]): void {
   try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const entries = readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory() && !entry.name.startsWith(".")) {

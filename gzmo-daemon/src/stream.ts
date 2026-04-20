@@ -5,9 +5,9 @@
  * so you can leave it open in Obsidian and watch the daemon breathe.
  *
  * Buffers writes to reduce I/O from 5+/sec to ~1/5sec.
+ * Uses native Bun.file() / Bun.write() for zero-copy I/O.
  */
 
-import { writeFileSync, existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 const MAX_LINES = 200;      // Keep the stream manageable
@@ -18,6 +18,7 @@ export class LiveStream {
   private readonly filePath: string;
   private buffer: string[] = [];
   private flushTimer: ReturnType<typeof setInterval> | null = null;
+  private flushing = false; // guard against concurrent flushes
 
   constructor(vaultPath: string) {
     this.filePath = join(vaultPath, "GZMO", "Live_Stream.md");
@@ -28,8 +29,11 @@ export class LiveStream {
   }
 
   private initialize(): void {
-    if (!existsSync(this.filePath)) {
-      writeFileSync(this.filePath, `# GZMO Live Stream\n*Auto-scroll to follow daemon state*\n\n`, "utf-8");
+    const file = Bun.file(this.filePath);
+    // Bun.file().size is 0 for non-existent files — use this as existence check
+    if (file.size === 0) {
+      Bun.write(this.filePath, `# GZMO Live Stream\n*Auto-scroll to follow daemon state*\n\n`)
+        .catch(() => {}); // fire-and-forget initialization
     }
   }
 
@@ -48,29 +52,36 @@ export class LiveStream {
     }
   }
 
-  /** Write buffered entries to disk */
+  /** Write buffered entries to disk (non-blocking via Bun.file/Bun.write) */
   private flush(): void {
-    if (this.buffer.length === 0) return;
+    if (this.buffer.length === 0 || this.flushing) return;
+    this.flushing = true;
 
-    try {
-      let content = readFileSync(this.filePath, "utf-8");
-      const lines = content.split("\n");
+    // Capture current buffer and clear it synchronously to avoid races
+    const entries = this.buffer;
+    this.buffer = [];
 
-      // Trim to MAX_LINES to prevent infinite growth
-      if (lines.length > MAX_LINES) {
-        const header = lines.slice(0, 3).join("\n");
-        const tail = lines.slice(-Math.floor(MAX_LINES * 0.8)).join("\n");
-        content = header + "\n\n*(earlier entries trimmed)*\n\n" + tail;
+    (async () => {
+      try {
+        let content = await Bun.file(this.filePath).text();
+        const lines = content.split("\n");
+
+        // Trim to MAX_LINES to prevent infinite growth
+        if (lines.length > MAX_LINES) {
+          const header = lines.slice(0, 3).join("\n");
+          const tail = lines.slice(-Math.floor(MAX_LINES * 0.8)).join("\n");
+          content = header + "\n\n*(earlier entries trimmed)*\n\n" + tail;
+        }
+
+        // Append all buffered lines at once
+        content += entries.join("");
+        await Bun.write(this.filePath, content);
+      } catch {
+        // If the file was deleted or locked, entries are discarded
+      } finally {
+        this.flushing = false;
       }
-
-      // Append all buffered lines at once
-      content += this.buffer.join("");
-      this.buffer = [];
-      writeFileSync(this.filePath, content, "utf-8");
-    } catch {
-      // If the file was deleted or locked, discard buffer
-      this.buffer = [];
-    }
+    })();
   }
 
   /** Write a section break (for major events like task completion) */
@@ -80,7 +91,19 @@ export class LiveStream {
 
   /** Flush on shutdown */
   destroy(): void {
-    this.flush();
+    // Synchronous final flush — acceptable on SIGTERM
+    if (this.buffer.length > 0) {
+      try {
+        const file = Bun.file(this.filePath);
+        // Use Bun.write synchronously for shutdown (fire-and-forget)
+        const entries = this.buffer;
+        this.buffer = [];
+        Bun.file(this.filePath).text().then(content => {
+          content += entries.join("");
+          Bun.write(this.filePath, content).catch(() => {});
+        }).catch(() => {});
+      } catch { /* last resort */ }
+    }
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;

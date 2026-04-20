@@ -75,8 +75,8 @@ export class VaultWatcher extends EventEmitter {
     this.debounceTimers.set(filePath, timer);
   }
 
-  private processFile(filePath: string): void {
-    const task = parseTask(filePath);
+  private async processFile(filePath: string): Promise<void> {
+    const task = await parseTask(filePath);
     if (!task) return;
 
     // Only dispatch tasks that are waiting to be processed

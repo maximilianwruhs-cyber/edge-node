@@ -19,7 +19,7 @@
  */
 
 import * as os from "os";
-import * as fs from "fs";
+import { writeFileSync } from "fs";
 import { LorenzAttractor, LogisticMap } from "./chaos";
 import { EngineState } from "./engine_state";
 import { ThoughtCabinet } from "./thoughts";
@@ -125,7 +125,7 @@ export class PulseLoop {
       clearTimeout(this.intervalId);
       this.intervalId = null;
       if (this.snapshotFilePath) {
-        try { fs.writeFileSync(this.snapshotFilePath, JSON.stringify(this.currentSnapshot, null, 2)); } catch {}
+        try { writeFileSync(this.snapshotFilePath, JSON.stringify(this.currentSnapshot, null, 2)); } catch {}
       }
       console.log("[PULSE] Stopped (final snapshot flushed)");
     }
@@ -307,8 +307,7 @@ export class PulseLoop {
     const finalPath = this.snapshotFilePath;
     const data = JSON.stringify(this.currentSnapshot, null, 2);
     
-    fs.promises.writeFile(tmpPath, data)
-      .then(() => fs.promises.rename(tmpPath, finalPath))
+    Bun.write(finalPath, data)
       .catch(() => {}); // non-fatal
   }
 }
