@@ -1,0 +1,9 @@
+{
+  "name": "chaos-engine",
+  "version": "1.0.0",
+  "description": "GZMO Chaos Engine — Lorenz-driven identity evolution for sovereign agents",
+  "openclaw": {
+    "extensions": ["./src/index.ts"]
+  },
+  "dependencies": {}
+}

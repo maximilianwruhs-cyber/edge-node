@@ -20,7 +20,8 @@ import { PulseLoop } from "./src/pulse";
 import { syncEmbeddings, embedSingleFile } from "./src/embeddings";
 import { defaultConfig } from "./src/types";
 import { TaskMemory } from "./src/memory";
-import type { ChaosSnapshot, TaskEvent } from "./src/types";
+import type { ChaosSnapshot } from "./src/types";
+import type { TaskEvent } from "./src/watcher";
 import type { EmbeddingStore } from "./src/embeddings";
 
 const VAULT_PATH = process.env.VAULT_PATH ?? resolve(import.meta.dir, "../../Obsidian_Vault");
@@ -103,6 +104,7 @@ try {
   const event: TaskEvent = {
     filePath: thinkFile,
     fileName: "_test_think",
+    status: "pending",
     body: "GZMO, state your identity and current chaos state. Be concise.",
     frontmatter: { status: "pending", action: "think" },
   };
@@ -143,6 +145,7 @@ try {
   const event: TaskEvent = {
     filePath: searchFile,
     fileName: "_test_search",
+    status: "pending",
     body: "What do you know about the chaos engine and allostasis system?",
     frontmatter: { status: "pending", action: "search" },
   };

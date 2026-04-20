@@ -21,6 +21,7 @@ import { LiveStream } from "./src/stream";
 import { PulseLoop } from "./src/pulse";
 import { DreamEngine } from "./src/dreams";
 import { SelfAskEngine } from "./src/self_ask";
+import { PruningEngine } from "./src/prune";
 import { defaultConfig } from "./src/types";
 import { syncEmbeddings, embedSingleFile } from "./src/embeddings";
 import { TaskMemory } from "./src/memory";
@@ -141,8 +142,9 @@ pulse.setTriggerDispatch((fired: TriggerFired[], snap: ChaosSnapshot) => {
       `*The Lorenz attractor's trajectory has been permanently altered.*`,
     ].join("\n");
     try {
-      writeFileSync(filepath, content, "utf-8");
-      console.log(`[CRYSTAL] Written: ${filename}`);
+      import("fs").then(fs => fs.promises.writeFile(filepath, content, "utf-8"))
+        .then(() => console.log(`[CRYSTAL] Written: ${filename}`))
+        .catch(() => {});
     } catch {}
   }
 });
@@ -317,7 +319,7 @@ setInterval(async () => {
   try {
     const results = await selfAsk.cycle(snap, embeddingStore, OLLAMA_API_URL, infer);
     for (const result of results) {
-      stream.log(`🔍 Self-Ask (${result.strategy}): ${result.output.slice(0, 80).replace(/\n/g, " ")}`);
+      stream.log(`🔍 Self-Ask (${result.strategy}): ${result.output.slice(0, 80).replace(/\\n/g, " ")}`);
       pulse.emitEvent({ type: "self_ask_completed", strategy: result.strategy, result: result.output });
 
       // Re-embed the new self-ask file
@@ -343,6 +345,14 @@ setInterval(async () => {
   nextSelfAskTime = Date.now() + nextMs;
   console.log(`[SELF-ASK] Next cycle in ${(nextMs / 3600000).toFixed(1)}h (energy=${snap2.energy.toFixed(0)}%)`);
 }, 60_000); // Check every minute
+
+// ── Initialize Pruning Engine (Purposeful Forgetting) ───────
+const pruner = new PruningEngine(VAULT_PATH);
+setInterval(async () => {
+  const snap = pulse.snapshot();
+  // Pruning checks every minute, Pruner internally ticks and only prunes if enough time passed
+  await pruner.tick(snap.tension, snap.energy);
+}, 60_000);
 // Upgrade 4: LiveStream dashboard pulse (every 60s)
 setInterval(() => {
   const snap = pulse.snapshot();

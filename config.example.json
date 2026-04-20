@@ -4,13 +4,26 @@
     "mode": "local",
     "auth": {
       "mode": "token",
-      "token": "0a9892ad1f2f99d506fa2494d40ac7793bc6bade44aa447e"
+      "token": "REPLACE_ME_RUN_INSTALL_NODE_SH"
+    }
+  },
+  "models": {
+    "providers": {
+      "gemini": {
+        "apiKey": "REPLACE_ME_GEMINI_API_KEY",
+        "models": [
+          {
+            "id": "gemini-2.5-flash",
+            "name": "Gemini 2.5 Flash (Cloud)"
+          }
+        ]
+      }
     }
   },
   "agents": {
     "defaults": {
       "workspace": "/workspace/core_identity",
-      "model": "google/gemini-3.1-pro-preview"
+      "model": "gemini/gemini-2.5-flash"
     }
   },
   "channels": {
@@ -24,16 +37,19 @@
     "servers": {
       "obsidian-vault": {
         "command": "npx",
-        "args": [
-          "-y",
-          "@modelcontextprotocol/server-filesystem",
-          "/workspace/Obsidian_Vault"
-        ]
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace/Obsidian_Vault"]
+      },
+      "qmd-search": {
+        "command": "qmd",
+        "args": ["mcp"]
       }
     }
   },
-  "meta": {
-    "lastTouchedVersion": "2026.4.2",
-    "lastTouchedAt": "2026-04-05T06:14:11.005Z"
+  "plugins": {
+    "entries": {
+      "acpx": {
+        "enabled": true
+      }
+    }
   }
 }

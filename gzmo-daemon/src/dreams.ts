@@ -62,13 +62,13 @@ export class DreamEngine {
     ollamaUrl?: string,
   ): Promise<DreamResult | null> {
     // 1. Find unprocessed completed tasks
-    const task = this.findUnprocessedTask();
+    const task = await this.findUnprocessedTask();
     if (!task) return null;
 
     // 2. Extract conversation content
-    const transcript = this.extractTranscript(task.path);
+    const transcript = await this.extractTranscript(task.path);
     if (transcript.length < MIN_BODY_LENGTH) {
-      this.markDigested(task.id);
+      await this.markDigested(task.id);
       return null;
     }
 
@@ -95,10 +95,10 @@ export class DreamEngine {
     if (!insights) return null;
 
     // 5. Write dream entry to Thought Cabinet (with vault links)
-    const dreamPath = this.writeDreamEntry(insights, snapshot, task.id, relatedFiles);
+    const dreamPath = await this.writeDreamEntry(insights, snapshot, task.id, relatedFiles);
 
     // 6. Mark as digested
-    this.markDigested(task.id);
+    await this.markDigested(task.id);
 
     return {
       taskFile: task.id,
@@ -110,25 +110,28 @@ export class DreamEngine {
 
   // ── Task Discovery ──────────────────────────────────────────
 
-  private findUnprocessedTask(): { id: string; path: string } | null {
+  private async findUnprocessedTask(): Promise<{ id: string; path: string } | null> {
     const inboxDir = path.join(this.vaultPath, "GZMO", "Inbox");
     try {
-      const files = fs.readdirSync(inboxDir)
-        .filter(f => f.endsWith(".md"))
-        .map(f => ({
-          name: f,
-          id: f,
-          path: path.join(inboxDir, f),
-          mtime: fs.statSync(path.join(inboxDir, f)).mtimeMs,
-        }))
-        .sort((a, b) => b.mtime - a.mtime);
+      const fileNames = await fs.promises.readdir(inboxDir);
+      const mdFiles = fileNames.filter(f => f.endsWith(".md"));
+      
+      const fileStats = await Promise.all(
+        mdFiles.map(async f => {
+          const filepath = path.join(inboxDir, f);
+          const stat = await fs.promises.stat(filepath);
+          return { name: f, id: f, path: filepath, mtime: stat.mtimeMs };
+        })
+      );
 
-      for (const file of files) {
+      fileStats.sort((a, b) => b.mtime - a.mtime);
+
+      for (const file of fileStats) {
         if (this.digestedIds.has(file.id)) continue;
 
         // Check if the task is completed
         try {
-          const raw = fs.readFileSync(file.path, "utf-8");
+          const raw = await fs.promises.readFile(file.path, "utf-8");
           const parsed = matter(raw);
           if (parsed.data.status === "completed") {
             return { id: file.id, path: file.path };
@@ -143,9 +146,9 @@ export class DreamEngine {
 
   // ── Transcript Extraction ───────────────────────────────────
 
-  private extractTranscript(taskPath: string): string {
+  private async extractTranscript(taskPath: string): Promise<string> {
     try {
-      const raw = fs.readFileSync(taskPath, "utf-8");
+      const raw = await fs.promises.readFile(taskPath, "utf-8");
       const parsed = matter(raw);
       let transcript = parsed.content.trim();
 
@@ -209,14 +212,14 @@ export class DreamEngine {
 
   // ── Vault Writing ──────────────────────────────────────────
 
-  private writeDreamEntry(
+  private async writeDreamEntry(
     insights: string,
     snap: ChaosSnapshot,
     taskFile: string,
     relatedFiles: SearchResult[] = [],
-  ): string {
+  ): Promise<string> {
     const cabinetDir = path.join(this.vaultPath, "GZMO", "Thought_Cabinet");
-    try { fs.mkdirSync(cabinetDir, { recursive: true }); } catch {}
+    try { await fs.promises.mkdir(cabinetDir, { recursive: true }); } catch {}
 
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
@@ -285,7 +288,7 @@ export class DreamEngine {
       `*Crystallized autonomously by the GZMO Dream Engine at tick ${snap.tick}.*`,
     );
 
-    fs.writeFileSync(filepath, content.join("\n"), "utf-8");
+    await fs.promises.writeFile(filepath, content.join("\n"), "utf-8");
     return filepath;
   }
 
@@ -300,7 +303,7 @@ export class DreamEngine {
     }
   }
 
-  private markDigested(taskId: string): void {
+  private async markDigested(taskId: string): Promise<void> {
     this.digestedIds.add(taskId);
 
     // Compact: keep only last 200 IDs
@@ -310,7 +313,7 @@ export class DreamEngine {
     }
 
     try {
-      fs.writeFileSync(this.digestedFilePath, JSON.stringify({
+      await fs.promises.writeFile(this.digestedFilePath, JSON.stringify({
         digested: [...this.digestedIds],
         lastDream: new Date().toISOString(),
       }, null, 2));

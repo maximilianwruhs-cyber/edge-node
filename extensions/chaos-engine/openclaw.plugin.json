@@ -1,0 +1,57 @@
+{
+  "id": "chaos-engine",
+  "metadata": {
+    "name": "GZMO Chaos Engine",
+    "description": "Lorenz attractor-driven identity evolution engine. Ports the gzmo-chaos Rust crate as a native OpenClaw plugin with real-time LLM temperature modulation, Thought Cabinet crystallization, and autonomous trigger system."
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "gravity": {
+        "type": "number",
+        "default": 9.8,
+        "description": "Base gravitational constant — controls energy drain rate"
+      },
+      "friction": {
+        "type": "number",
+        "default": 0.5,
+        "description": "Base friction coefficient — scales energy drain"
+      },
+      "seed": {
+        "type": "number",
+        "default": 0.506,
+        "description": "Initial seed for the Lorenz attractor and Logistic Map"
+      },
+      "bpm": {
+        "type": "integer",
+        "default": 174,
+        "description": "Heartbeat frequency in beats per minute (174 = original Drum & Bass tempo)"
+      },
+      "initialTension": {
+        "type": "number",
+        "default": 0.0,
+        "description": "Starting tension level (0-100)"
+      },
+      "proxyPort": {
+        "type": "integer",
+        "default": 11435,
+        "description": "Local port for the Ollama temperature proxy"
+      },
+      "snapshotPath": {
+        "type": "string",
+        "default": "/workspace/CHAOS_STATE.json",
+        "description": "Path for periodic snapshot file output"
+      },
+      "enableProxy": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable the Ollama temperature override proxy"
+      },
+      "enableTriggers": {
+        "type": "boolean",
+        "default": true,
+        "description": "Enable autonomous trigger notifications"
+      }
+    }
+  }
+}

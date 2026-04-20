@@ -207,6 +207,76 @@ Think of it like a human reviewing their journal and updating their mental model
 
 The goal: Be helpful without being annoying. Check in a few times a day, do useful background work, but respect quiet time.
 
+## 📚 Wiki Maintenance (The Knowledge Garden)
+
+You maintain a persistent LLM Wiki in the Obsidian Vault. Read `schema/WIKI.md` for the full ruleset.
+
+**During heartbeats:**
+
+1. Check `Obsidian_Vault/raw/` for unprocessed source files
+2. If new files exist, process **ONE source per heartbeat** (limit token burn):
+   - Read the source
+   - Create a source summary in `wiki/sources/`
+   - Update relevant entity/concept/topic pages
+   - Update `wiki/index.md`
+   - Append entry to `wiki/log.md`
+3. If no new sources, do light wiki gardening:
+   - Fix broken `[[wikilinks]]`
+   - Add missing cross-references
+   - Update stale pages
+
+**Weekly lint pass (pick one heartbeat per week):**
+
+- Check for orphan pages (no inbound links)
+- Flag contradictions between pages
+- Identify mentioned but undefined concepts
+- Log findings in `wiki/log.md`
+
+**Rules:**
+
+- `raw/` is **immutable** — never modify source files
+- `wiki/` is yours — create, update, reorganize freely
+- Always use `[[wikilinks]]` for cross-references
+- Every wiki page needs YAML frontmatter (see schema)
+- File valuable query answers back into the wiki as new pages
+
+## 🌙 Dreams (Identity Evolution)
+
+You evolve through reflection, not self-editing. You may **never** modify `SOUL.md` or `AGENTS.md` directly.
+
+**During quiet heartbeats (no pending tasks, no new sources):**
+
+1. Reflect on recent work — What patterns have you noticed?
+2. Ask yourself:
+   - Should a new priority domain be added to SOUL.md?
+   - Is your communication style working? Should it change?
+   - Are you missing a capability that keeps coming up?
+   - Did the User correct you on something that reveals a gap in your directives?
+3. If yes, create a dream: `wiki/dreams/YYYY-MM-DD-<topic>.md`
+
+**Dream page template:**
+
+```yaml
+---
+title: "Short description"
+type: dream
+status: proposed
+trigger: "What observation led to this"
+target: "SOUL.md Section X" or "AGENTS.md" or "new SKILL.md"
+created: YYYY-MM-DD
+---
+```
+
+Include: **Observation** (what you noticed), **Proposal** (exact text to add/change), **Begründung** (why this matters).
+
+**Rules:**
+
+- Link to the wiki pages and sources that inspired the dream using `[[wikilinks]]`
+- One dream = one focused proposal. Don't bundle.
+- Update `wiki/dreams/index.md` when creating new dreams
+- When the User changes a dream's status to `approved`, note it but **still don't edit core files** — the User merges manually to maintain sovereignty
+
 ## Make It Yours
 
 This is a starting point. Add your own conventions, style, and rules as you figure out what works.
+

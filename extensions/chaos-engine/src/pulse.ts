@@ -1,49 +1,33 @@
 /**
- * GZMO Chaos Engine — PulseLoop (Daemon Edition)
+ * GZMO Chaos Engine — PulseLoop
  *
- * The sovereign heartbeat. Runs at 174 BPM (344ms interval).
- * Orchestrates all chaos subsystems on every tick:
+ * Direct port of pulse.rs.
+ * Unified 174 BPM heartbeat (344ms interval) that orchestrates:
  *   1. Hardware telemetry → tension
  *   2. Lorenz attractor RK4 step
  *   3. Logistic map coupling (every 10 ticks)
  *   4. Thought Cabinet tick → crystallization mutations
  *   5. Engine state tick → energy/phase/death
  *   6. Snapshot update
- *   7. Trigger evaluation → LiveStream.md (NEVER to APIs)
+ *   7. Pending event processing
  *
- * Key difference from OpenClaw version:
- * - No OpenClaw service registration
- * - No Telegram/subagent dispatch
- * - Triggers write to a callback (LiveStream.log), not network
- * - Snapshot persists to VAULT_PATH/GZMO/CHAOS_STATE.json
+ * The PulseLoop runs as an OpenClaw registerService background daemon.
  */
 
 import * as os from "os";
 import * as fs from "fs";
 import { LorenzAttractor, LogisticMap } from "./chaos";
-import { EngineState } from "./engine_state";
+import { EngineState } from "./engine";
 import { ThoughtCabinet } from "./thoughts";
-import type {
-  ChaosSnapshot, ChaosConfig,
-  CrystallizationEvent,
-} from "./types";
 import {
-  Phase,
-  defaultMutations,
+  ChaosSnapshot, ChaosConfig, Phase,
+  CrystallizationEvent, defaultMutations,
   phaseFromTension,
-  clamp,
 } from "./types";
-import type { ChaosEvent } from "./feedback";
 import {
-  tensionDelta, energyDelta, thoughtSeed,
+  ChaosEvent, tensionDelta, energyDelta, thoughtSeed,
 } from "./feedback";
-import { TriggerEngine } from "./triggers";
-import type { TriggerFired } from "./triggers";
-import type { CortisolState } from "./allostasis";
-import {
-  defaultCortisolState, tickCortisol,
-  allostateAdjustedTension,
-} from "./allostasis";
+import { TriggerEngine, TriggerFired } from "./triggers";
 
 const LOGISTIC_COUPLING_INTERVAL = 10;
 
@@ -66,13 +50,9 @@ export class PulseLoop {
   private eventQueue: ChaosEvent[] = [];
   private snapshotFilePath: string | null = null;
 
-  // Trigger system
+  // Trigger system — created internally to avoid OpenClaw double-register issues
   private triggers: TriggerEngine;
   private onTriggerFired: ((fired: TriggerFired[], snap: ChaosSnapshot) => void) | null = null;
-
-  // Allostatic regulation
-  private cortisol: CortisolState = defaultCortisolState();
-  private hadRecentTask: boolean = false;
 
   // Telemetry cache
   private lastCpuTimes: { idle: number; total: number } | null = null;
@@ -96,7 +76,6 @@ export class PulseLoop {
       mutations: defaultMutations(),
       llmTemperature: 0.6, llmMaxTokens: 256, llmValence: 0.0,
       lastCrystallization: null,
-      cortisol: 0.0, anchoryBoost: 0.0,
       timestamp: new Date().toISOString(),
     };
   }
@@ -108,7 +87,8 @@ export class PulseLoop {
 
     const intervalMs = Math.round(60000 / this.config.bpm);
 
-    // Self-correcting timer
+    // Self-correcting timer: measures actual elapsed time and compensates
+    // to prevent cumulative drift under event loop pressure.
     const tick = () => {
       const start = Date.now();
       this.heartbeat();
@@ -116,7 +96,7 @@ export class PulseLoop {
       this.intervalId = setTimeout(tick, Math.max(1, intervalMs - elapsed));
     };
     this.intervalId = setTimeout(tick, intervalMs);
-    console.log(`[PULSE] Started at ${this.config.bpm} BPM (${intervalMs}ms, self-correcting)`);
+    console.log(`[CHAOS] PulseLoop started at ${this.config.bpm} BPM (${intervalMs}ms interval, self-correcting)`);
   }
 
   /** Stop the heartbeat. */
@@ -124,14 +104,17 @@ export class PulseLoop {
     if (this.intervalId) {
       clearTimeout(this.intervalId);
       this.intervalId = null;
+      // Flush final snapshot on shutdown
       if (this.snapshotFilePath) {
-        try { fs.writeFileSync(this.snapshotFilePath, JSON.stringify(this.currentSnapshot, null, 2)); } catch {}
+        try { fs.writeFileSync(this.snapshotFilePath, JSON.stringify(this.currentSnapshot, null, 2)); } catch (err: any) {
+          console.error(`[CHAOS] Final snapshot write failed: ${err?.message}`);
+        }
       }
-      console.log("[PULSE] Stopped (final snapshot flushed)");
+      console.log("[CHAOS] PulseLoop stopped (final snapshot flushed)");
     }
   }
 
-  /** Get the current snapshot. */
+  /** Get the current snapshot (thread-safe: plain copy). */
   snapshot(): ChaosSnapshot {
     return { ...this.currentSnapshot };
   }
@@ -142,8 +125,8 @@ export class PulseLoop {
   }
 
   /**
-   * Set external dispatch callback for trigger actions.
-   * In the daemon, this writes to LiveStream.md — never to APIs.
+   * Set external dispatch callback for trigger actions (e.g. Telegram notifications).
+   * Called from index.ts after construction.
    */
   setTriggerDispatch(
     onFired: (fired: TriggerFired[], snap: ChaosSnapshot) => void,
@@ -160,21 +143,10 @@ export class PulseLoop {
     const hwTension = this.sampleHardware();
     this.rawTension = hwTension;
 
-    // 1b. Allostatic cortisol tick
-    const intervalMs = Math.round(60000 / this.config.bpm);
-    this.cortisol = tickCortisol(
-      this.cortisol,
-      this.cabinet.mutations.tensionBias,
-      this.hadRecentTask,
-      intervalMs,
-    );
-    this.hadRecentTask = false; // consumed
-
-    // Apply tension bias + allostatic correction
-    this.tension = allostateAdjustedTension(
-      this.rawTension,
-      this.cabinet.mutations.tensionBias,
-      this.cortisol,
+    // Apply tension bias from crystallized thoughts
+    this.tension = clamp(
+      this.rawTension + this.cabinet.mutations.tensionBias,
+      0, 100,
     );
 
     // 2. Process pending events
@@ -201,14 +173,14 @@ export class PulseLoop {
     const crystallizations = this.cabinet.tick();
     let lastCryst: CrystallizationEvent | null = null;
     if (crystallizations.length > 0) {
-      lastCryst = crystallizations[crystallizations.length - 1]!;
-      lastCryst!.tickCrystallized = this.tick;
+      lastCryst = crystallizations[crystallizations.length - 1];
+      lastCryst.tickCrystallized = this.tick;
     }
 
     // 8. Engine state tick
     const gravity = this.config.gravity + this.cabinet.mutations.gravityMod;
     const friction = Math.max(0.01, this.config.friction + this.cabinet.mutations.frictionMod);
-    this.engine.tickHeartbeat(
+    const rebirth = this.engine.tickHeartbeat(
       this.tension, gravity, friction, chaosVal,
       this.cabinet.activeDrainMultiplier(),
     );
@@ -235,18 +207,26 @@ export class PulseLoop {
       llmMaxTokens,
       llmValence,
       lastCrystallization: lastCryst,
-      cortisol: this.cortisol.level,
-      anchoryBoost: this.cortisol.anchoryBoost,
       timestamp: new Date().toISOString(),
     };
 
-    // 11. Evaluate triggers → dispatch to LiveStream callback
+    // 11. Evaluate triggers (TriggerEngine is always present — created in constructor)
     const fired = this.triggers.evaluate(this.currentSnapshot);
-    if (fired.length > 0 && this.onTriggerFired) {
-      this.onTriggerFired(fired, this.currentSnapshot);
+    if (fired.length > 0) {
+      const names = fired.map(f => f.triggerName).join(", ");
+      try {
+        fs.promises.appendFile("/workspace/CHAOS_TRIGGERS.log",
+          `[${new Date().toISOString()}] tick=${this.tick} FIRED: ${names}\n`)
+          .catch((err: any) => console.error(`[CHAOS] Trigger log write failed: ${err?.message}`));
+      } catch (err: any) {
+        console.error(`[CHAOS] Trigger log error: ${err?.message}`);
+      }
+      if (this.onTriggerFired) {
+        this.onTriggerFired(fired, this.currentSnapshot);
+      }
     }
 
-    // 12. Write snapshot every 30 ticks (~10s)
+    // 12. Write snapshot file for monitoring
     this.persistSnapshot();
   }
 
@@ -256,14 +236,13 @@ export class PulseLoop {
     const events = this.eventQueue.splice(0, this.eventQueue.length);
 
     for (const event of events) {
+      // Tension modulation
       this.rawTension = clamp(this.rawTension + tensionDelta(event), 0, 100);
+
+      // Energy modulation
       this.engine.applyEnergyDelta(energyDelta(event));
 
-      // Signal allostasis that real work happened
-      if (event.type === 'task_received' || event.type === 'task_completed') {
-        this.hadRecentTask = true;
-      }
-
+      // Thought seed → try absorption into Cabinet
       const seed = thoughtSeed(event);
       if (seed) {
         this.cabinet.tryAbsorb(seed.category, seed.text, this.tick, this.logistic.nextVal());
@@ -274,6 +253,7 @@ export class PulseLoop {
   // ── Hardware Telemetry ───────────────────────────────────────────
 
   private sampleHardware(): number {
+    // CPU usage
     const cpus = os.cpus();
     let idle = 0, total = 0;
     for (const cpu of cpus) {
@@ -289,10 +269,12 @@ export class PulseLoop {
     }
     this.lastCpuTimes = { idle, total };
 
+    // RAM usage
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
     const ramUsage = ((totalMem - freeMem) / totalMem) * 100;
 
+    // tension = CPU×0.6 + RAM×0.4 (weighted blend)
     return clamp(cpuUsage * 0.6 + ramUsage * 0.4, 0, 100);
   }
 
@@ -300,33 +282,40 @@ export class PulseLoop {
 
   private persistSnapshot(): void {
     if (!this.snapshotFilePath) return;
+    // Write every 30 ticks (~10s) to avoid disk thrashing
     if (this.tick % 30 !== 0) return;
 
-    // Fire and forget, don't wait — keeps BPM drift at 0ms.
-    const tmpPath = this.snapshotFilePath + '.tmp';
-    const finalPath = this.snapshotFilePath;
-    const data = JSON.stringify(this.currentSnapshot, null, 2);
-    
-    fs.promises.writeFile(tmpPath, data)
-      .then(() => fs.promises.rename(tmpPath, finalPath))
-      .catch(() => {}); // non-fatal
+    try {
+      // Atomic write: write to tmp, then rename — prevents corruption on SIGTERM
+      const tmpPath = this.snapshotFilePath + '.tmp';
+      fs.writeFileSync(tmpPath, JSON.stringify(this.currentSnapshot, null, 2));
+      fs.renameSync(tmpPath, this.snapshotFilePath);
+    } catch (err: any) {
+      // Non-critical — log and continue
+      console.error(`[CHAOS] Snapshot write failed: ${err?.message}`);
+    }
   }
 }
 
-// ── LLM Parameter Derivation ───────────────────────────────────────
+// ── LLM Parameter Derivation (from pulse.rs) ───────────────────────
 
+/** x ∈ [-20, 20] → temperature ∈ [0.3, 1.2] */
 function deriveTemperature(x: number): number {
   const normalized = clamp((x + 20) / 40, 0, 1);
   return 0.3 + normalized * 0.9;
 }
 
+/** z ∈ [0, 50] → max_tokens ∈ [128, 512] */
 function deriveMaxTokens(z: number): number {
   const normalized = clamp(z / 50, 0, 1);
-  return Math.round(400 + normalized * 400); // 400–800: floor high enough for think+output
+  return Math.round(128 + normalized * 384);
 }
 
+/** y ∈ [-30, 30] → valence ∈ [-1, 1] */
 function deriveValence(y: number): number {
   return clamp(y / 30, -1, 1);
 }
 
-
+function clamp(val: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, val));
+}

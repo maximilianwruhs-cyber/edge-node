@@ -1,55 +1,144 @@
-# Edge Node: Sovereign Agentic AI Stack
+# Edge Node: Sovereign Agent Stack
 
-Edge Node is a bare-metal, un-tethered, zero-trust artificial intelligence development environment. Designed for maximum hardware efficiency and complete local privacy, it allows you to run high-performance C++ inference natively alongside autonomous agent tooling without relying on external cloud APIs.
+A bare-metal, zero-trust AI agent environment. Designed for hardware-adaptive deployment and complete local sovereignty — no cloud dependencies for core inference.
 
 ## Core Tenets
-1. **Absolute Sovereignty**: No telemetry, no forced cloud accounts, no external dependencies for core inference.
-2. **Immutable Infrastructure**: All dependencies are burned into the containers via Ansible and Docker. If the node loses internet access, it still boots.
-3. **Hardware Maximization**: Uses `llama.cpp` compiled natively against the host's specific GPU architecture (via stub-linker injection) for maximum Flash Attention efficiency.
+1. **Absolute Sovereignty**: Zero telemetry, no cloud accounts for core inference. Everything runs on your hardware.
+2. **Immutable Infrastructure**: All dependencies packaged in Docker. If the node loses internet, it still boots.
+3. **Hardware Adaptive**: `install_node.sh` auto-detects your GPU and selects the optimal model. From Pascal to Blackwell.
+4. **Self-Evolution**: The Chaos Engine drives autonomous identity evolution through Dreams, Research, and a live heartbeat pulse.
 
 ## Architecture
 
-The stack consists of three hyper-optimized containers:
-1. **PGVector Backbone**: Real-time vector memory for Retrieval-Augmented Generation (RAG).
-2. **Llama-Coder Engine**: Native C++ inference engine using `b8665` LLAMA architecture, directly accessing host GPUs.
-3. **OpenClaw Gateway**: A lightweight, offline-first agent orchestrator (Node 22) that acts as the entry point and connects to external messaging platforms like Telegram.
-
-## Deployment
-
-Due to its 12-factor Environment-driven architecture, `Edge Node` is universally portable. You have two options for deployment:
-
-### Option A: Zero-Touch Bare-Metal Deploy (Ansible)
-For production nodes, deploy from a control machine directly onto a virgin Ubuntu server.
-
-1. Configure your targets in `ansible/inventory.yml`
-2. Run the playbook:
-```bash
-ansible-playbook -i ansible/inventory.yml ansible/deploy_node.yml --ask-become-pass --ask-vault-pass
 ```
-The playbook will automatically install Docker, Nvidia Container Toolkit, sync the codebase, securely template your `.env` secrets, download the LLMs, and ignite the stack.
+┌────────────────────────────────────────────────────────────┐
+│                    GZMO Edge Node                          │
+├──────────────────────────┬─────────────────────────────────┤
+│   OpenClaw Gateway       │   Chaos Engine (Plugin)         │
+│   Agent Orchestrator     │   ┌─────────────────────┐      │
+│   host-network           │   │ PulseLoop (174 BPM)  │     │
+│                          │   │ DreamEngine          │      │
+│   ┌───────────────┐      │   │ ResearchEngine       │     │
+│   │ Telegram Bot  │      │   │ Ollama Proxy (:11435)│     │
+│   │ MCP: vault+qmd│      │   └─────────────────────┘      │
+│   │ ACP Bridge    │      │                                 │
+│   └───────────────┘      │   Model: Gemini 2.5 Flash      │
+│                          │          (Cloud API)            │
+├──────────────────────────┴─────────────────────────────────┤
+│  Obsidian Vault (wiki + dreams + raw sources)              │
+│  qmd Hybrid Search (BM25 + vector + LLM reranking)        │
+└────────────────────────────────────────────────────────────┘
+Optional: Ollama Engine (local inference, --profile local)
+```
 
-### Option B: Local Quick Start
-If your local machine already has Docker and the NVIDIA drivers installed:
+### Services
+1. **OpenClaw Gateway** — Agent orchestrator with Telegram integration, MCP servers (filesystem + qmd hybrid search), and ACP bridge to host IDE.
+2. **Chaos Engine** — OpenClaw plugin providing autonomous heartbeat (PulseLoop), identity evolution (DreamEngine), grounded web research (ResearchEngine), and behavioral modulation via the Thought Cabinet.
+3. **Ollama Engine** *(optional, `--profile local`)* — Model-agnostic local inference, GPU-accelerated via NVIDIA Container Toolkit.
 
-1. Copy the environment template:
+### Knowledge Layer
+- **Obsidian Vault** — Persistent wiki maintained by GZMO (entities, concepts, topics) + raw source archive
+- **qmd Hybrid Search** — BM25 + vector + LLM reranking with 3 micro-LLMs
+
+### Chaos Engine
+The Chaos Engine is the agent's autonomous nervous system:
+
+| Component | Purpose |
+|-----------|---------|
+| **PulseLoop** | Self-correcting heartbeat at 174 BPM. Tracks tension, energy, phase. Dispatches triggers (dreams, research, identity check). |
+| **DreamEngine** | Reflects on recent chat sessions, writes dream proposals to `wiki/dreams/`. |
+| **ResearchEngine** | Grounded web research via Gemini with search tools. Budget-capped at 15k tokens/day. |
+| **Thought Cabinet** | Stochastic thought absorption system. Thoughts incubate before crystallizing into behavioral influence. |
+
+### Dreams & Identity Evolution
+The agent proposes identity changes ("Dreams") into `Obsidian_Vault/wiki/dreams/`. The User reviews and merges them into core identity files (`SOUL.md`, `AGENTS.md`).
+
+## Quick Start
+
+### Prerequisites
+- **Software**: Docker + Docker Compose
+- **Accounts**: Telegram bot token (from [@BotFather](https://t.me/BotFather)), Gemini API key
+- **Optional**: NVIDIA GPU + Container Toolkit (for local Ollama inference)
+
+### Deployment
+
+```bash
+# Clone and run the setup wizard
+git clone <repo-url> edge-node && cd edge-node
+./install_node.sh
+```
+
+The wizard will:
+1. **Detect your GPU** (if present)
+2. **Ask for your config** (Vault path, Telegram token, API keys)
+3. **Generate all configs** (`.env`, `openclaw.json`)
+4. **Launch the stack** and verify health
+
+### Manual Setup (without wizard)
+
 ```bash
 cp .env.example .env
-# Edit .env with your local hardware mappings and tokens
+# Edit .env with your values
+docker compose up -d
 ```
-2. Place your `.gguf` model in the `MODELS_DIR` defined in `.env`.
-3. Launch the stack:
+
+## Node CLI
+
+The `node.sh` script is your single entrypoint for all operations:
+
 ```bash
-./deploy.sh
+./node.sh              # Status dashboard (container, Chaos Engine, triggers, GPU)
+./node.sh logs 100     # Show last 100 log lines
+./node.sh restart      # Restart the stack
+./node.sh sync         # Sync chaos-engine source → container (after code edits)
+./node.sh shell        # Open shell in container
+./node.sh chaos        # Show Chaos Engine state (JSON)
+./node.sh research     # Show research budget (JSON)
+./node.sh stop         # Stop the stack
+./node.sh start        # Start the stack
 ```
 
-## Security & Verification
+## Connecting your IDE (ACP Bridge)
 
-`Edge Node` operates under a zero-trust model. Ensure your `.env` is fully populated. A local `.gitignore` is included out-of-the-box to ensure your API keys and hardware paths never leak in public commits.
+1. Install an ACP-compatible extension in VS Code (e.g., Cline or RooCode)
+2. Set the API Provider to "Local/ACP Connection"
+3. Set the Address to `ws://127.0.0.1:18789`
+4. Enter the `OPENCLAW_AUTH_TOKEN` from `.env` to authenticate
 
-To check the real-time health and GPU telemetry of a running node:
-```bash
-./status.sh
-```
+## Files & Directories
+
+| Path | Purpose |
+|------|---------|
+| `docker-compose.yml` | Stack definition (OpenClaw + optional Ollama) |
+| `install_node.sh` | Hardware-sensing setup wizard |
+| `node.sh` | Unified CLI for daily operations |
+| `core_identity/` | SOUL.md, MEMORY.md — agent personality & memory |
+| `extensions/chaos-engine/` | Chaos Engine plugin source |
+| `config/` | OpenClaw runtime config (gitignored) |
+| `.env` | Secrets & paths (gitignored) |
+| `.env.example` | Template for new deployments |
+| `config.example.json` | OpenClaw config template |
+
+## Security
+
+Edge Node operates under zero-trust:
+- `.env` and `config/` are gitignored — secrets never leak
+- `install_node.sh` generates cryptographic auth tokens
+- All ports bound to `127.0.0.1` only
+- External access only through Telegram bot (authenticated)
+
+## Troubleshooting
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| `API rate limit reached` | Gemini RPM quota exceeded (burst of tool calls) | Wait 60s, or upgrade to paid tier with higher RPM |
+| `suspicious ownership` error | Plugin files have wrong UID after `docker cp` | Run `./node.sh sync` (handles chown automatically) |
+| `chaos_propose_dream` fails | LLM passed undefined args | Already fixed with null guards — restart: `./node.sh restart` |
+| `Both GOOGLE_API_KEY and GEMINI_API_KEY set` | Duplicate key in `.env` | Remove `GOOGLE_API_KEY` line from `.env` |
+
+## Heritage
+
+This project fuses hardware-sensing logic from [Phantom Drive](../phantom-drive-build/) (PCI ID hex-matching, VRAM-adaptive model selection) with the sovereign agent architecture of the GZMO Edge Node.
 
 ## License
 MIT License. See `LICENSE` for details.
