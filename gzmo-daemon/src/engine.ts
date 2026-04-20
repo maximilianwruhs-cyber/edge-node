@@ -15,6 +15,7 @@ import type { TaskEvent } from "./watcher";
 import type { VaultWatcher } from "./watcher";
 import { resolve } from "path";
 import type { ChaosSnapshot } from "./types";
+import { Phase } from "./types";
 import type { PulseLoop } from "./pulse";
 import type { EmbeddingStore } from "./embeddings";
 import { searchVault, formatSearchContext } from "./search";
@@ -22,7 +23,7 @@ import { TaskMemory } from "./memory";
 
 // ── Configuration ──────────────────────────────────────────
 const OLLAMA_BASE_URL = process.env.OLLAMA_URL ?? "http://localhost:11434/v1";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen2.5:3b";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "qwen3:4b";
 const OLLAMA_API_URL = process.env.OLLAMA_URL?.replace("/v1", "") ?? "http://localhost:11434";
 
 // ── Provider Setup ─────────────────────────────────────────
@@ -40,16 +41,49 @@ function parseAction(frontmatter: Record<string, unknown>): TaskAction {
   return "think";
 }
 
-// ── System Prompt (lean for GTX 1070 prefill speed) ────────
+
+// ── Phase Persona ──────────────────────────────────────────
+function phasePersona(phase: Phase): string {
+  switch (phase) {
+    case Phase.Idle:  return "You are calm and reflective. Prioritize clarity and precision.";
+    case Phase.Build: return "You are alert and focused. Be thorough and structured.";
+    case Phase.Drop:  return "You are under pressure. Be decisive and direct. No hedging.";
+  }
+}
+
+// ── Valence Coloring ───────────────────────────────────────
+function valenceDirective(valence: number): string {
+  if (valence < -0.5) return " Approach with caution — flag risks and uncertainties.";
+  if (valence < -0.15) return " Be measured and analytical.";
+  if (valence > 0.5) return " Be exploratory and confident — suggest bold connections.";
+  if (valence > 0.15) return " Be constructive and forward-looking.";
+  return ""; // Neutral — no directive
+}
+
+// ── Verbosity Control (from Lorenz z-axis) ─────────────
+function verbosityDirective(maxTokens: number): string {
+  if (maxTokens < 500) return " Keep your response concise — under 150 words.";
+  if (maxTokens > 700) return " You may elaborate and explore in detail.";
+  return ""; // Default range — no override
+}
+
+// ── System Prompt (chaos-modulated) ────────────────────────
 function buildSystemPrompt(
   snap?: ChaosSnapshot,
   vaultContext?: string,
   memoryContext?: string,
 ): string {
-  let prompt = "You are GZMO, a local AI daemon. Be concise and technical. Respond in Markdown.";
+  let prompt = "You are GZMO, a sovereign local AI daemon running on this machine. GZMO is your name, not an acronym. You are NOT a fictional character. Respond in Markdown.";
 
   if (snap) {
-    prompt += ` [T:${snap.tension.toFixed(0)} E:${snap.energy.toFixed(0)}% ${snap.phase}]`;
+    // Phase-driven persona modulation
+    prompt += " " + phasePersona(snap.phase);
+    // Valence coloring from Lorenz y-axis
+    prompt += valenceDirective(snap.llmValence);
+    // Verbosity from Lorenz z-axis (soft control, no hard token cap)
+    prompt += verbosityDirective(snap.llmMaxTokens);
+    // Chaos state tag for grounding
+    prompt += ` [T:${snap.tension.toFixed(0)} E:${snap.energy.toFixed(0)}% ${snap.phase} V:${snap.llmValence >= 0 ? "+" : ""}${snap.llmValence.toFixed(2)}]`;
   }
 
   // Inject vault search context (action: search)
@@ -65,7 +99,7 @@ function buildSystemPrompt(
   return prompt;
 }
 
-// ── Standalone Inference (for DreamEngine) ──────────────────
+// ── Standalone Inference (for DreamEngine / SelfAsk) ────────
 export async function infer(system: string, prompt: string): Promise<string> {
   const result = streamText({
     model: ollama(OLLAMA_MODEL),
@@ -76,6 +110,10 @@ export async function infer(system: string, prompt: string): Promise<string> {
   for await (const chunk of result.textStream) {
     text += chunk;
   }
+  // Strip out thinking blocks (Qwen3 emits both <think> and <thinking> formats)
+  text = text.replace(/<think>[\s\S]*?<\/think>\n?/g, "")
+    .replace(/<thinking>[\s\S]*?<\/thinking>\n?/g, "")
+    .trim();
   return text;
 }
 
@@ -120,30 +158,46 @@ export async function processTask(
       }
     }
 
-    // 3. Build system prompt with context
+    // 3. Get chaos snapshot for full parameter modulation
     const snap = pulse?.snapshot();
+    const temp = snap?.llmTemperature ?? 0.7;
+    const maxTok = snap?.llmMaxTokens ?? 400;
+    const valence = snap?.llmValence ?? 0;
+    console.log(`[ENGINE] Model: ${OLLAMA_MODEL} (temp: ${temp.toFixed(2)}, tokens: ${maxTok}, val: ${valence >= 0 ? "+" : ""}${valence.toFixed(2)}, phase: ${snap?.phase ?? "?"})`);    
+
+    // 4. Build system prompt with context (now chaos-modulated)
     const memoryContext = memory?.toPromptContext();
     const systemPrompt = buildSystemPrompt(snap, vaultContext, memoryContext);
 
-    // 4. Run inference (chaos-modulated)
+    // 5. Run inference — temperature + prompt modulation (no hard token cap locally)
     const result = streamText({
       model: ollama(OLLAMA_MODEL),
       system: systemPrompt,
       prompt: body,
-      temperature: snap?.llmTemperature ?? 0.7,
+      temperature: temp,
     });
 
-    // 5. Stream the response
+    // 6. Stream the response
     let fullText = "";
     for await (const chunk of result.textStream) {
       fullText += chunk;
     }
 
-    // 6. Append the result to the task file
+    // 7. Strip thinking blocks from Qwen3 output (both <think> and <thinking> formats)
+    fullText = fullText
+      .replace(/<think>[\s\S]*?<\/think>\n?/g, "")
+      .replace(/<thinking>[\s\S]*?<\/thinking>\n?/g, "")
+      .trim();
+    if (!fullText) {
+      fullText = "_[GZMO produced internal reasoning but no visible output. Consider adding explicit output instructions or using /no_think.]_";
+      console.warn(`[ENGINE] Empty output after think-stripping for: ${fileName}`);
+    }
+
+    // 8. Append the result to the task file
     const output = `\n---\n\n## GZMO Response\n*${new Date().toISOString()}*\n\n${fullText}`;
     appendToTask(filePath, output);
 
-    // 7. Mark as completed
+    // 9. Mark as completed
     updateFrontmatter(filePath, {
       status: "completed",
       completed_at: new Date().toISOString(),
@@ -151,10 +205,10 @@ export async function processTask(
 
     console.log(`[ENGINE] Completed: ${fileName} (${action})`);
 
-    // 8. Record in episodic memory
+    // 10. Record in episodic memory
     memory?.record(fileName, fullText);
 
-    // 9. Feed completion back into chaos engine
+    // 11. Feed completion back into chaos engine
     const durationMs = Date.now() - startTime;
     pulse?.emitEvent({
       type: "task_completed",
@@ -162,7 +216,7 @@ export async function processTask(
       durationMs,
     });
 
-    // 10. Handle chain action — create next task
+    // 12. Handle chain action — create next task
     if (action === "chain" && frontmatter?.chain_next) {
       const nextTask = String(frontmatter.chain_next);
       console.log(`[ENGINE] Chain → next task: ${nextTask}`);

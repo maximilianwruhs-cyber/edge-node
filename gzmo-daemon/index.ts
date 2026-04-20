@@ -14,7 +14,7 @@
  */
 
 import { resolve, join } from "path";
-import { existsSync, mkdirSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { VaultWatcher } from "./src/watcher";
 import { processTask, infer } from "./src/engine";
 import { LiveStream } from "./src/stream";
@@ -55,7 +55,7 @@ console.log("  ⚡ Chaos Engine + Allostasis + Vault RAG");
 console.log("═══════════════════════════════════════════════");
 console.log(`  Vault:  ${VAULT_PATH}`);
 console.log(`  Inbox:  ${INBOX_PATH}`);
-console.log(`  Model:  ${process.env.OLLAMA_MODEL ?? "qwen2.5:3b"}`);
+console.log(`  Model:  ${process.env.OLLAMA_MODEL ?? "qwen3:4b"}`);
 console.log(`  Ollama: ${OLLAMA_API_URL}`);
 console.log("═══════════════════════════════════════════════");
 
@@ -84,7 +84,7 @@ const pulse = new PulseLoop(defaultConfig());
 const snapshotPath = join(VAULT_PATH, "GZMO", "CHAOS_STATE.json");
 pulse.start(snapshotPath);
 
-// Wire triggers → LiveStream (NEVER to APIs)
+// Wire triggers → LiveStream + Crystallization vault notes (NEVER to APIs)
 pulse.setTriggerDispatch((fired: TriggerFired[], snap: ChaosSnapshot) => {
   for (const f of fired) {
     if (f.action.type === "log") {
@@ -94,6 +94,56 @@ pulse.setTriggerDispatch((fired: TriggerFired[], snap: ChaosSnapshot) => {
         phase: snap.phase,
       });
     }
+  }
+
+  // Upgrade 5: Write crystallization events to Thought_Cabinet
+  if (snap.lastCrystallization) {
+    const c = snap.lastCrystallization;
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = now.toISOString().slice(11, 19).replace(/:/g, "-");
+    const filename = `${dateStr}_${timeStr}_crystallization.md`;
+    const filepath = join(VAULT_PATH, "GZMO", "Thought_Cabinet", filename);
+    const content = [
+      "---",
+      `date: ${dateStr}`,
+      `time: \"${now.toISOString().slice(11, 19)}\"`,
+      `tick: ${snap.tick}`,
+      `category: ${c.category}`,
+      `mutation_target: ${c.mutation.target}`,
+      `mutation_delta: ${c.mutation.delta}`,
+      `tags: [crystallization, mutation, autonomous]`,
+      "---",
+      "",
+      `# 🔮 Crystallization — ${dateStr} ${now.toISOString().slice(11, 16)} UTC`,
+      "",
+      `**Category**: ${c.category}`,
+      `**Thought**: \"${c.text}\"`,
+      `**Incubated**: ${c.tickCrystallized - c.tickAbsorbed} ticks (absorbed at tick ${c.tickAbsorbed})`,
+      "",
+      "## Mutation Applied",
+      "",
+      `| Target | Delta | Description |`,
+      `|--------|-------|-------------|`,
+      `| ${c.mutation.target} | ${c.mutation.delta > 0 ? "+" : ""}${c.mutation.delta} | ${c.mutation.description} |`,
+      "",
+      "## Attractor State After Mutation",
+      "",
+      `| Metric | Value |`,
+      `|--------|-------|`,
+      `| Tension | ${snap.tension.toFixed(1)}% |`,
+      `| Energy | ${snap.energy.toFixed(0)}% |`,
+      `| Temperature | ${snap.llmTemperature.toFixed(3)} |`,
+      `| Valence | ${snap.llmValence >= 0 ? "+" : ""}${snap.llmValence.toFixed(3)} |`,
+      `| MaxTokens | ${snap.llmMaxTokens} |`,
+      "",
+      "---",
+      `*The Lorenz attractor's trajectory has been permanently altered.*`,
+    ].join("\n");
+    try {
+      writeFileSync(filepath, content, "utf-8");
+      console.log(`[CRYSTAL] Written: ${filename}`);
+    } catch {}
   }
 });
 
@@ -208,9 +258,13 @@ watcher.on("task", async (event) => {
 // ── Initialize Dream Engine ────────────────────────────────
 const dreams = new DreamEngine(VAULT_PATH);
 
-// Dream cycle: every 30 minutes
-const DREAM_INTERVAL_MS = 30 * 60 * 1000;
+// Dream cycle: chaos-responsive interval (15-45min depending on tension)
+const DREAM_BASE_MS = 30 * 60 * 1000;
+let nextDreamTime = Date.now() + DREAM_BASE_MS;
+
 setInterval(async () => {
+  if (Date.now() < nextDreamTime) return;
+
   const snap = pulse.snapshot();
   if (!snap.alive || snap.energy < 20) return;
 
@@ -232,16 +286,33 @@ setInterval(async () => {
   } catch (err: any) {
     console.error(`[DREAM] Dream cycle error: ${err?.message}`);
   }
-}, DREAM_INTERVAL_MS);
+
+  // Chaos-driven next interval: high tension = dream sooner, low = dream later
+  const snap2 = pulse.snapshot();
+  const tensionFactor = 1.0 - (snap2.tension / 100) * 0.5; // 0.5–1.0
+  const nextMs = Math.round(DREAM_BASE_MS * tensionFactor);
+  nextDreamTime = Date.now() + nextMs;
+  console.log(`[DREAM] Next dream in ${(nextMs / 60000).toFixed(0)}min (tension=${snap2.tension.toFixed(0)})`);
+}, 60_000); // Check every minute
 
 // ── Initialize Self-Ask Engine ─────────────────────────────
 const selfAsk = new SelfAskEngine(VAULT_PATH);
 
-// Self-Ask cycle: every 2 hours
-const SELFASK_INTERVAL_MS = 2 * 60 * 60 * 1000;
+// Self-Ask cycle: chaos-responsive (1-3h depending on energy)
+const SELFASK_BASE_MS = 2 * 60 * 60 * 1000;
+let nextSelfAskTime = Date.now() + SELFASK_BASE_MS;
+
 setInterval(async () => {
+  if (Date.now() < nextSelfAskTime) return;
+
   const snap = pulse.snapshot();
   if (!snap.alive || !embeddingStore) return;
+  // Skip if energy too low (conserve resources)
+  if (snap.energy < 30) {
+    console.log(`[SELF-ASK] Skipped — energy too low (${snap.energy.toFixed(0)}%)`);
+    nextSelfAskTime = Date.now() + 30 * 60 * 1000; // retry in 30min
+    return;
+  }
 
   try {
     const results = await selfAsk.cycle(snap, embeddingStore, OLLAMA_API_URL, infer);
@@ -264,15 +335,21 @@ setInterval(async () => {
   } catch (err: any) {
     console.error(`[SELF-ASK] Cycle error: ${err?.message}`);
   }
-}, SELFASK_INTERVAL_MS);
-// ── Heartbeat Logger (every 60s) ───────────────────────────
+
+  // Chaos-driven next interval: high energy = think sooner
+  const snap2 = pulse.snapshot();
+  const energyFactor = 1.5 - (snap2.energy / 100); // 0.5–1.5
+  const nextMs = Math.round(SELFASK_BASE_MS * energyFactor);
+  nextSelfAskTime = Date.now() + nextMs;
+  console.log(`[SELF-ASK] Next cycle in ${(nextMs / 3600000).toFixed(1)}h (energy=${snap2.energy.toFixed(0)}%)`);
+}, 60_000); // Check every minute
+// Upgrade 4: LiveStream dashboard pulse (every 60s)
 setInterval(() => {
   const snap = pulse.snapshot();
-  stream.log("💓 Pulse.", {
-    tension: snap.tension,
-    energy: snap.energy,
-    phase: snap.phase,
-  });
+  const v = snap.llmValence >= 0 ? `+${snap.llmValence.toFixed(2)}` : snap.llmValence.toFixed(2);
+  stream.log(
+    `💓 T=${snap.tension.toFixed(0)} E=${snap.energy.toFixed(0)}% ${snap.phase} | temp=${snap.llmTemperature.toFixed(2)} val=${v} tok=${snap.llmMaxTokens} | 🧠 ${snap.thoughtsIncubating} incubating, ${snap.thoughtsCrystallized} crystallized`,
+  );
 
   // Feed heartbeat back into chaos engine
   pulse.emitEvent({ type: "heartbeat_fired", energy: snap.energy });

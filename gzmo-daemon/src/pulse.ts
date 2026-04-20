@@ -319,7 +319,7 @@ function deriveTemperature(x: number): number {
 
 function deriveMaxTokens(z: number): number {
   const normalized = clamp(z / 50, 0, 1);
-  return Math.round(128 + normalized * 384);
+  return Math.round(400 + normalized * 400); // 400–800: floor high enough for think+output
 }
 
 function deriveValence(y: number): number {

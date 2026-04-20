@@ -84,7 +84,7 @@ export interface ChaosSnapshot {
 
   // Derived LLM parameters
   llmTemperature: number;   // [0.3, 1.2]
-  llmMaxTokens: number;     // [128, 512]
+  llmMaxTokens: number;     // [400, 800]
   llmValence: number;       // [-1.0, 1.0]
 
   // Last crystallization (if any on this tick)
