@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "start": "bun run index.ts",
+    "summon": "bun run index.ts",
     "dev": "bun --watch run index.ts",
     "typecheck": "tsc --noEmit"
   },

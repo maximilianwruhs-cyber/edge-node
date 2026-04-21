@@ -1,179 +1,114 @@
-# GZMO Daemon v0.3.0 — Smart Core
+# tinyFolder 📂
 
-A sovereign, local-first AI daemon that turns your Obsidian Vault into an intelligent folder. No cloud APIs. No subscriptions. Just markdown files and a heartbeat.
+> **The most minimalistic autonomous AI OS.**  
+> *A sovereign, local-first intelligence that turns a plain markdown folder into a living ecosystem.*
 
-## What It Does
+**tinyFolder** gives the illusion of a completely banal, empty text directory. No cloud APIs. No complex databases. No subscriptions. But underneath the filesystem beats a simulated heart. 
 
-Drop a `.md` file in `GZMO/Inbox/` → the daemon reads it, thinks, searches your vault, and writes the answer back into the same file. It dreams autonomously, remembers across tasks, and never sedates itself.
+Inside this directory lives **GZMO**, an autonomous daemon serving as the ghost in the machine. It reads your markdown files, processes tasks, experiences simulated stress (allostasis), curates its own vector search memory, and even dreams when it's idle.
 
-## Quick Start
+---
+
+## 👻 The "Ghost in the Folder"
+
+You don't chat with `tinyFolder` through a shiny web UI. You interact with it exactly like an OS filesystem: you drop files into its inbox.
+
+1. Create a `.md` file in `Obsidian_Vault/GZMO/Inbox/`
+2. Give it a simple YAML frontmatter (`action: think`) 
+3. Save the file.
+4. The daemon wakes up, reads your file, reasons over its own local knowledge base (Vault RAG), appends the answer at the bottom, and goes back to sleep.
+
+---
+
+## 🛠️ Quick Start
 
 ```bash
 # 1. Install dependencies
 cd gzmo-daemon && bun install
 
-# 2. Copy config
+# 2. Rename config & update vault path (defaults to ../Obsidian_Vault)
 cp .env.example .env
-# Edit .env with your vault path
 
-# 3. Start Ollama (optimized for GTX 1070)
+# 3. Start your local Ollama server
 OLLAMA_KV_CACHE_TYPE=q8_0 OLLAMA_FLASH_ATTENTION=1 OLLAMA_KEEP_ALIVE=-1 ollama serve
 
-# 4. Pull required models
+# 4. Pull the recommended local models
 ollama pull hermes3:8b
 ollama pull nomic-embed-text
 
-# 5. Start the daemon
-bun start
+# 5. Summon the daemon
+bun run summon
 ```
+*(Pro tip: In `package.json`, we aliased `bun start` to `bun run summon` to fit the ghost metaphor.)*
 
-## Task Actions
+---
 
-Tasks are markdown files with YAML frontmatter. The `action:` field controls behavior:
+## ⚙️ Architecture & Autonomous Subsystems
 
-### `action: think` (default)
-Direct LLM inference. The daemon answers your question.
+While the interface is just a folder, the backend is a complex swarm of autonomous engines running entirely on edge hardware (tested on a single GTX 1070 8GB).
 
+### 1. The Chaos Engine (PulseLoop)
+Simulates a localized biological heartbeat using a **Lorenz Attractor** running at 174 BPM. It calculates two continuous values: `Tension` (Stress) and `Energy` (Resources). 
+- If you give it tasks, Tension decreases but Energy is consumed.
+- If it's bored, Tension rises, eventually triggering spontaneous thoughts ("Crystallizations").
+- The LLM's `temperature` dynamically scales with Tension, making the OS responses more chaotic when stressed and highly logical when relaxed.
+
+### 2. Live Vector RAG (The Memory)
+Any markdown file you create in the Vault is instantly embedded into a local vector database (`nomic-embed-text`). If you set `action: search` in your task, GZMO automatically queries this database to ground its answers in its own reality.
+
+### 3. The Dream Engine
+When idle, the daemon reflects on the tasks it completed during the day. Depending on its chaos state, it distills these raw tasks into abstract, philosophical meta-learnings and writes them to its `/Thought_Cabinet/`.
+
+### 4. Self-Ask & Wiki Engines (Self-Reflection)
+The longer it runs, the smarter it gets.
+- **Self-Ask:** Periodically queries its own memory to detect contradictions or gaps in its knowledge, asking itself questions to resolve them.
+- **Wiki Engine:** Auto-consolidates hundreds of raw system logs and "dreams" into beautifully structured Wikipedia-style articles. It even reads its own source code every 24h to update its architectural self-documentation.
+
+---
+
+## 🤖 Task Actions (Frontmatter Routing)
+
+Control the daemon by dropping markdown files with these YAML headers into the Inbox:
+
+### `action: think`
+Direct LLM inference.
 ```yaml
 ---
 status: pending
 action: think
 ---
-
-Explain the Lorenz attractor in 3 bullet points.
+Explain the Lorenz attractor.
 ```
 
 ### `action: search`
-Searches your vault for relevant context before answering. Uses nomic-embed-text embeddings (768d vectors) with cosine similarity.
-
+Reads the Vault (RAG) before answering.
 ```yaml
 ---
 status: pending
 action: search
 ---
-
-What optimization decisions were made for the GTX 1070?
+Based on your logs, why did your tension drop yesterday?
 ```
 
 ### `action: chain`
-Output feeds into the next task. Use `chain_next:` to specify the follow-up file.
-
+Pipes the output into the next file automatically.
 ```yaml
 ---
 status: pending
 action: chain
-chain_next: step_2.md
+chain_next: summarize_step2.md
+---
+List exactly 3 components of the chaos engine.
+```
+
 ---
 
-Summarize all research on speculative decoding.
-```
+## 💻 Tech Stack
+- **Runtime:** Bun (TypeScript)
+- **Inference:** Ollama (`hermes3:8b` via Llama.cpp)
+- **Embeddings:** `nomic-embed-text`
+- **Database:** Raw Markdown / Obsidian format
+- **Watchers:** Chokidar for filesystem listening
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────┐
-│              GZMO Daemon v0.3.0             │
-│                                             │
-│  PulseLoop (174 BPM)                        │
-│  ├── Lorenz Attractor (RK4)                 │
-│  ├── Logistic Map coupling                  │
-│  ├── Thought Cabinet crystallization        │
-│  ├── Allostasis (simulated cortisol)        │
-│  └── Trigger Engine → Live_Stream.md        │
-│                                             │
-│  VaultWatcher (chokidar)                    │
-│  └── Inbox/*.md → Task Router               │
-│      ├── think → LLM inference              │
-│      ├── search → Vault RAG → LLM          │
-│      └── chain → LLM → next task           │
-│                                             │
-│  EmbeddingPipeline (nomic-embed-text)       │
-│  ├── Boot sync (SHA256 dedup)               │
-│  └── Live sync (wiki watcher)              │
-│                                             │
-│  TaskMemory (rolling 5-task log)            │
-│  DreamEngine (30-min distillation)          │
-│  SelfAskEngine (Gap detective, contradictions)│
-│  WikiEngine (knowledge consolidation & self-doc)│
-└─────────────────────────────────────────────┘
-```
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VAULT_PATH` | **required** | Absolute path to Obsidian Vault |
-| `OLLAMA_MODEL` | `hermes3:8b` | Model for inference |
-| `OLLAMA_URL` | `http://localhost:11434/v1` | Ollama API endpoint |
-| `OLLAMA_KV_CACHE_TYPE` | `f16` | KV cache quantization (`q8_0` recommended) |
-| `OLLAMA_FLASH_ATTENTION` | `0` | Flash attention (`1` = enabled) |
-| `OLLAMA_KEEP_ALIVE` | `5m` | Model keep-alive (`-1` = forever) |
-
-## Vault Structure
-
-```
-Obsidian_Vault/
-├── GZMO/
-│   ├── Inbox/              ← Drop tasks here
-│   ├── Thought_Cabinet/    ← Dream crystallizations
-│   ├── Live_Stream.md      ← Real-time daemon log
-│   ├── CHAOS_STATE.json    ← Lorenz attractor state
-│   ├── embeddings.json     ← Vector store (nomic-embed-text)
-│   └── memory.json         ← Episodic task memory
-└── wiki/
-    ├── research/           ← Embedded research notes
-    ├── sessions/           ← Distilled session logs
-    └── ...                 ← All .md files are searchable
-```
-
-## Source Files (2,508 LOC)
-
-| File | LOC | Purpose |
-|------|-----|---------|
-| `pulse.ts` | 323 | PulseLoop — 174 BPM heartbeat orchestrator |
-| `wiki_engine.ts` | 235 | Autonomous knowledge consolidation & self-doc |
-| `embeddings.ts` | 282 | Vault embedding pipeline (nomic-embed-text) |
-| `dreams.ts` | 268 | Autonomous dream distillation engine |
-| `self_ask.ts` | 225 | Autonomous self-interrogation & spaced repetition |
-| `engine.ts` | 196 | Task processor with action routing |
-| `thoughts.ts` | 187 | Thought Cabinet (Disco Elysium-style) |
-| `triggers.ts` | 168 | Edge-triggered autonomous events |
-| `types.ts` | 140 | Shared type definitions |
-| `chaos.ts` | 126 | Lorenz attractor + Logistic map |
-| `watcher.ts` | 118 | File watcher (chokidar) with debounce |
-| `allostasis.ts` | 111 | Anti-sedation cortisol system |
-| `engine_state.ts` | 97 | Energy/Phase/Death state machine |
-| `skills.ts` | 93 | Wiki skills discovery |
-| `search.ts` | 88 | Cosine similarity vault search |
-| `feedback.ts` | 88 | Bidirectional chaos event channel |
-| `memory.ts` | 84 | Rolling episodic task memory |
-| `frontmatter.ts` | 81 | YAML frontmatter parser/writer |
-| `stream.ts` | 58 | LiveStream.md writer |
-
-## Auto-Start (systemd)
-
-```bash
-# Install the service
-sudo cp gzmo-daemon.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable gzmo-daemon
-sudo systemctl start gzmo-daemon
-
-# Check status
-sudo systemctl status gzmo-daemon
-journalctl -u gzmo-daemon -f
-```
-
-## Hardware Tested
-
-- **GTX 1070** (8GB VRAM) — hermes3:8b at ~20 tok/s
-- **24+ hours** verified uptime, 0 crashes
-- **2,065 chunks** embedded
-- **nomic-embed-text** (274 MB) fits alongside hermes3:8b in VRAM
-
-## Version History
-
-- **v0.4.0** — Sovereign Core: WikiEngine consolidation, Self-Ask Engine
-- **v0.3.0** — Smart Core: allostasis, vault RAG, task routing, episodic memory
-- **v0.2.0** — Chaos Edition: streaming inference, KV cache optimization
-- **v0.1.0** — Initial port from OpenClaw plugin to sovereign Bun daemon
+---
+*Created as a sovereign research project in Edge AI autonomy.*

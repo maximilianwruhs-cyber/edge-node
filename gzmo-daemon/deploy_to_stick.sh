@@ -1,26 +1,35 @@
 #!/bin/bash
 
-STICK="/media/maximilian-wruhs/GZMO1"
+# Usage: ./deploy_to_stick.sh [/path/to/mountpoint]
+# Deploys tinyFolder OS to a local USB stick for offline sovereign execution.
+
+# Default stick path (updates automatically to current user)
+STICK="${1:-/media/$USER/GZMO1}"
+
+# Resolve paths dynamically to protect privacy and enable portability
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+EDGE_NODE_DIR="$(dirname "$SCRIPT_DIR")"
+VAULT_DIR="$(dirname "$EDGE_NODE_DIR")/Obsidian_Vault"
 
 echo "==========================================="
-echo " Deploying GZMO to Sovereign USB Stick"
+echo " 👻 Deploying tinyFolder to USB Stick"
 echo "==========================================="
 
-# Check if stick is mounted
 if [ ! -d "$STICK" ]; then
     echo "ERROR: USB stick not found at $STICK"
+    echo "Usage: ./deploy_to_stick.sh /path/to/usb/drive"
     exit 1
 fi
 
-echo "1. Syncing GZMO Daemon (excluding node_modules)..."
+echo "1. Syncing tinyFolder OS Core (excluding node_modules)..."
 rsync -av --delete --exclude "node_modules" \
       --exclude ".git" \
-      /home/maximilian-wruhs/Dokumente/Playground/DevStack_v2/edge-node/ \
+      "$EDGE_NODE_DIR/" \
       "$STICK/edge-node/"
 
 echo ""
-echo "2. Syncing Obsidian Vault..."
-rsync -av --delete /home/maximilian-wruhs/Dokumente/Playground/DevStack_v2/Obsidian_Vault/ \
+echo "2. Syncing Obsidian Vault (Memory)..."
+rsync -av --delete "$VAULT_DIR/" \
       "$STICK/Obsidian_Vault/"
 
 echo ""
@@ -34,7 +43,8 @@ echo "==========================================="
 echo " DEPLOYMENT COMPLETE! 🚀"
 echo "==========================================="
 echo "To run from the stick on a new machine:"
-echo "1. export OLLAMA_MODELS=\"\$PWD/ollama_models\""
-echo "2. ollama serve"
-echo "3. Update .env VAULT_PATH"
-echo "4. bun start"
+echo "1. cd /path/to/stick"
+echo "2. export OLLAMA_MODELS=\"\$PWD/ollama_models\""
+echo "3. ollama serve &"
+echo "4. cd edge-node/gzmo-daemon"
+echo "5. bun run summon"

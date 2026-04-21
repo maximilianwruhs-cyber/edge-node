@@ -1,12 +1,15 @@
-# GZMO Edge Node – Exam & Reviewer Guide
+# tinyFolder 📂 – Exam & Reviewer Guide
 
-Welcome to the GZMO Sovereign Edge Node evaluation. 
+> **The most minimalistic autonomous AI OS.**  
+> *A project demonstrating true local autonomy, allostatic stress simulation, and self-documenting RAG architecture inside a plain text folder.*
 
-This project is a 100% offline, local-first artificial intelligence daemon. It acts as an autonomous "Folder OS", reading Markdown files, maintaining a chaos-driven heartbeat, and building a searchable wiki of its own memories.
+Welcome to the **tinyFolder** Edge Node evaluation. 
+
+This project explores the illusion of simplicity. On the outside, it is just a normal folder syncing markdown files. On the inside lives **GZMO**, an autonomous daemon serving as the ghost in the machine. It reads markdown files, maintains a chaos-driven heartbeat, and builds a searchable wiki of its own memories.
 
 ## 1. Quick Start (Running from this USB Stick)
 
-The project is designed to run entirely from this USB drive. You do not need an internet connection to run the test, as the dependencies (`node_modules`), the database (`Obsidian_Vault`), and the AI models (`ollama_models`) are fully packaged on the stick.
+The project is designed to run entirely offline from this USB drive. The dependencies (`node_modules`), the database (`Obsidian_Vault`), and the AI models (`ollama_models`) are fully packaged on the stick.
 
 **Prerequisites:**
 You need to have installed on your machine:
@@ -29,7 +32,7 @@ ollama serve &
 
 ### Running the 8-Stage Gauntlet (Stress Test)
 
-The project includes an exhaustive 8-stage automated stress test that evaluates the engine's core capabilities (Identity Compliance, RAG Vault Search, Task Chaining, Dream Distillation, Self-Ask, Wiki Autonomy, and Chaos State Integrity).
+The project includes an exhaustive 8-stage automated stress test that evaluates GZMO's core capabilities (Identity Compliance, RAG Vault Search, Task Chaining, Dream Distillation, Self-Ask, Wiki Autonomy, and Chaos State Integrity).
 
 ```bash
 # 3. Enter the daemon directory
@@ -42,19 +45,19 @@ bun run test_hermes3_stress.ts
 
 ---
 
-## 2. Using the Tool Manually (Interactive Mode)
+## 2. Using the OS Manually (Interactive Mode)
 
 If you wish to test the daemon interactively rather than running the automated gauntlet:
 
-**A. Start the Daemon:**
+**A. Summon the Daemon:**
 ```bash
 cd edge-node/gzmo-daemon
-bun start
+bun run summon
 ```
 You will see the daemon's heartbeat (PulseLoop) starting at 174 BPM.
 
 **B. Give it a Task:**
-GZMO doesn't have a normal chat interface. It lives in the file system. 
+tinyFolder doesn't have a chat interface. It lives in the file system. 
 1. Open the folder `Obsidian_Vault/GZMO/Inbox/`
 2. Create a text file called `hello_gzmo.md`
 3. Paste the following text into it and save:
@@ -75,7 +78,7 @@ Within 1-2 seconds, the daemon will detect the file. Check the terminal to watch
 
 ## 3. Notable Autonomous Features for Evaluation
 
-If you leave the daemon running (via `bun start`), it will autonomously execute these subsystems:
+If you leave the daemon running (via `bun run summon`), it will autonomously execute these subsystems:
 
 - **The Chaos Engine (`src/pulse.ts` & `src/chaos.ts`)**: A coupled Lorenz Attractor and Logistic Map running in real-time. It simulates the daemon's "mood" (Tension and Energy). 
 - **The Dream Engine (`src/dreams.ts`)**: Every ~30 minutes, it reflects on recently completed tasks and distills new philosophical insights ("Dreams").
